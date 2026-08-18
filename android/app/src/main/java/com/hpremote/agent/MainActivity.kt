@@ -13,9 +13,24 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val PREF_PAIRING_CODE = "pairing_code"
+        private const val PREF_SERVER_URL = "server_url"
+    }
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var projectionManager: MediaProjectionManager
-    private val pairingCode = Random.nextInt(0, 1_000_000).toString().padStart(6, '0')
+    private val prefs by lazy { getSharedPreferences("hp_remote", MODE_PRIVATE) }
+
+    // Generated once per install and reused forever after, so the same code
+    // (and the controller page's remembered code) keep working without retyping.
+    private val pairingCode: String by lazy {
+        prefs.getString(PREF_PAIRING_CODE, null) ?: run {
+            val code = Random.nextInt(0, 1_000_000).toString().padStart(6, '0')
+            prefs.edit().putString(PREF_PAIRING_CODE, code).apply()
+            code
+        }
+    }
 
     private val captureLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -31,17 +46,25 @@ class MainActivity : AppCompatActivity() {
 
         projectionManager = getSystemService(MediaProjectionManager::class.java)
         binding.textCode.text = pairingCode
-        binding.editServerUrl.setText(defaultServerUrl())
+        binding.editServerUrl.setText(prefs.getString(PREF_SERVER_URL, null) ?: defaultServerUrl())
 
-        binding.btnStart.setOnClickListener {
-            captureLauncher.launch(projectionManager.createScreenCaptureIntent())
-        }
+        binding.btnStart.setOnClickListener { startCaptureFlow() }
         binding.btnStop.setOnClickListener {
             stopService(Intent(this, ScreenCaptureService::class.java))
         }
         binding.btnOpenAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
+
+        // Ask for screen-capture consent as soon as the app opens, so the only tap
+        // left is Android's own "화면 공유" system dialog (that one can't be skipped -
+        // it's an OS-enforced consent screen, not something this app controls).
+        if (savedInstanceState == null) startCaptureFlow()
+    }
+
+    private fun startCaptureFlow() {
+        prefs.edit().putString(PREF_SERVER_URL, binding.editServerUrl.text.toString().trim()).apply()
+        captureLauncher.launch(projectionManager.createScreenCaptureIntent())
     }
 
     override fun onResume() {
@@ -62,7 +85,7 @@ class MainActivity : AppCompatActivity() {
         startForegroundService(intent)
     }
 
-    private fun defaultServerUrl(): String = "ws://192.168.0.10:8080/ws"
+    private fun defaultServerUrl(): String = "wss://hp-remote-server.onrender.com/ws"
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val enabled = Settings.Secure.getString(
