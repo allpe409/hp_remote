@@ -9,6 +9,8 @@ const ctx = canvas.getContext("2d");
 const textForm = document.getElementById("text-form");
 const textInput = document.getElementById("text-input");
 
+console.log("[hp_remote] elements:", { pairScreen, remoteScreen, canvas });
+
 let ws = null;
 let deviceWidth = 0;
 let deviceHeight = 0;
@@ -39,11 +41,15 @@ function connect(code) {
 
   ws.addEventListener("message", (ev) => {
     if (ev.data instanceof ArrayBuffer) {
-      renderFrame(ev.data);
+      renderFrame(ev.data).catch((err) => console.error("[hp_remote] renderFrame failed:", err));
       return;
     }
-    const msg = JSON.parse(ev.data);
-    handleMessage(msg);
+    try {
+      const msg = JSON.parse(ev.data);
+      handleMessage(msg);
+    } catch (err) {
+      console.error("[hp_remote] failed to handle message:", ev.data, err);
+    }
   });
 
   ws.addEventListener("close", () => {
@@ -57,6 +63,7 @@ function connect(code) {
 }
 
 function handleMessage(msg) {
+  console.log("[hp_remote] message:", msg);
   switch (msg.type) {
     case "registered":
       deviceWidth = msg.width || 0;
@@ -64,6 +71,10 @@ function handleMessage(msg) {
       if (deviceWidth && deviceHeight) setCanvasSize(deviceWidth, deviceHeight);
       showRemoteScreen();
       connStatus.textContent = "연결됨";
+      console.log("[hp_remote] after showRemoteScreen:", {
+        pairHidden: pairScreen.classList.contains("hidden"),
+        remoteHidden: remoteScreen.classList.contains("hidden"),
+      });
       break;
     case "info":
       deviceWidth = msg.width;
