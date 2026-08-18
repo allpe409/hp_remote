@@ -1,0 +1,47 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - claude/mobile-remote-control-app-c143tw
+    paths:
+      - "android/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hp-remote-agent-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish install link (release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: hp_remote Agent - latest build
+          body: |
+            자동 빌드된 hp_remote 안드로이드 앱(디버그 빌드)입니다.
+            아래 app-debug.apk 를 폰에서 다운로드해 설치하세요.
+            (설치 시 "출처를 알 수 없는 앱 설치 허용"이 필요할 수 있습니다.)
+
+            커밋: ${{ github.sha }}
+          files: android/app/build/outputs/apk/debug/app-debug.apk
