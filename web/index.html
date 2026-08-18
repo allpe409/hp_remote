@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>hp_remote 컨트롤러</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="pair-screen" class="screen">
+    <div class="pair-box">
+      <h1>hp_remote</h1>
+      <p>폰 앱에 표시된 6자리 코드를 입력하세요.</p>
+      <form id="pair-form">
+        <input id="code-input" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="000000" autocomplete="off" required />
+        <button type="submit">연결</button>
+      </form>
+      <p id="pair-status" class="status"></p>
+    </div>
+  </div>
+
+  <div id="remote-screen" class="screen hidden">
+    <div class="toolbar">
+      <button id="btn-back">뒤로</button>
+      <button id="btn-home">홈</button>
+      <button id="btn-recents">최근</button>
+      <button id="btn-disconnect">연결 해제</button>
+      <span id="conn-status" class="status"></span>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="screen-canvas"></canvas>
+    </div>
+    <form id="text-form">
+      <input id="text-input" placeholder="텍스트 입력 후 전송" autocomplete="off" />
+      <button type="submit">전송</button>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

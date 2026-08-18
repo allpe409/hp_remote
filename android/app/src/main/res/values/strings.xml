@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">hp_remote Agent</string>
+    <string name="accessibility_service_description">hp_remote이 원격 컨트롤러로부터 받은 탭·스와이프·키 입력을 이 기기에 대신 전달할 수 있도록 허용합니다.</string>
+    <string name="notification_channel_name">화면 공유</string>
+    <string name="notification_title">hp_remote 화면 공유 중</string>
+    <string name="notification_text">원격 컨트롤러에 화면을 전송하고 있습니다.</string>
+</resources>

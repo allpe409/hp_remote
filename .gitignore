@@ -1,0 +1,18 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Android / Gradle
+android/.gradle/
+android/local.properties
+android/.idea/
+android/**/build/
+android/*.iml
+android/**/*.iml
+android/captures/
+android/.cxx/
+android/app/release/
+android/app/debug/
+
+# OS
+.DS_Store
