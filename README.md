@@ -5,9 +5,9 @@ Android 기기의 화면을 PC 웹 브라우저에서 보고, 터치·스와이�
 ## 구조
 
 ```
-android/   Android 앱 (원격 조작을 당하는 폰에 설치)
-server/    Node.js 중계 서버 (폰 <-> 웹 컨트롤러 WebSocket 릴레이 + 웹 페이지 서빙)
-web/       PC 브라우저용 컨트롤러 UI (server가 정적 파일로 서빙)
+android/        Android 앱 (원격 조작을 당하는 폰에 설치)
+server/         Node.js 중계 서버 (폰 <-> 웹 컨트롤러 WebSocket 릴레이)
+server/public/  PC 브라우저용 컨트롤러 UI (server가 정적 파일로 서빙)
 ```
 
 ### 동작 방식
