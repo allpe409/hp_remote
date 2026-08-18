@@ -9,7 +9,7 @@ body {
 }
 
 .screen { height: 100%; }
-.hidden { display: none; }
+.hidden { display: none !important; }
 
 #pair-screen {
   display: flex;
