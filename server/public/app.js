@@ -85,14 +85,23 @@ function connect(code) {
     ws.send(JSON.stringify({ type: "register", role: "controller", code }));
   });
 
+  let videoFrameCount = 0;
+  let audioFrameCount = 0;
+
   ws.addEventListener("message", (ev) => {
     if (ev.data instanceof ArrayBuffer) {
       const type = new Uint8Array(ev.data, 0, 1)[0];
       const payload = ev.data.slice(1);
       if (type === FRAME_TYPE_VIDEO) {
+        videoFrameCount++;
+        if (videoFrameCount <= 3) console.log("[hp_remote] video frame", videoFrameCount, "bytes:", payload.byteLength);
         renderFrame(payload).catch((err) => console.error("[hp_remote] renderFrame failed:", err));
       } else if (type === FRAME_TYPE_AUDIO) {
+        audioFrameCount++;
+        if (audioFrameCount <= 3) console.log("[hp_remote] audio frame", audioFrameCount, "bytes:", payload.byteLength);
         playAudioChunk(payload);
+      } else {
+        console.warn("[hp_remote] unknown binary frame type:", type, "bytes:", ev.data.byteLength);
       }
       return;
     }
