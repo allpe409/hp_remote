@@ -1,13 +1,18 @@
 package com.hpremote.agent
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.hpremote.agent.databinding.ActivityMainBinding
 import kotlin.random.Random
 
@@ -39,6 +44,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    // Result is ignored on purpose: whether the user grants mic access or not,
+    // we still proceed to the screen-share prompt (audio is just skipped if denied).
+    private val micPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { startCaptureFlow() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -56,15 +66,30 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
-        // Ask for screen-capture consent as soon as the app opens, so the only tap
-        // left is Android's own "화면 공유" system dialog (that one can't be skipped -
-        // it's an OS-enforced consent screen, not something this app controls).
-        if (savedInstanceState == null) startCaptureFlow()
+        // Ask for mic + screen-capture consent as soon as the app opens, so the only
+        // taps left are Android's own system consent dialogs (those can't be skipped -
+        // they're an OS-enforced security boundary, not something this app controls).
+        if (savedInstanceState == null) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            } else {
+                startCaptureFlow()
+            }
+        }
     }
 
     private fun startCaptureFlow() {
         prefs.edit().putString(PREF_SERVER_URL, binding.editServerUrl.text.toString().trim()).apply()
-        captureLauncher.launch(projectionManager.createScreenCaptureIntent())
+        // On Android 14+ this skips the "entire screen vs. one app" picker and goes
+        // straight to the plain allow/cancel consent screen for the whole display.
+        val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            projectionManager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        } else {
+            projectionManager.createScreenCaptureIntent()
+        }
+        captureLauncher.launch(captureIntent)
     }
 
     override fun onResume() {

@@ -13,6 +13,50 @@ let ws = null;
 let deviceWidth = 0;
 let deviceHeight = 0;
 
+// Must match RelayConnection.kt's TYPE_VIDEO / TYPE_AUDIO prefix bytes.
+const FRAME_TYPE_VIDEO = 1;
+const FRAME_TYPE_AUDIO = 2;
+const AUDIO_SAMPLE_RATE = 16000;
+
+let audioCtx = null;
+let nextPlayTime = 0;
+
+// Browsers block audio playback until the page has seen a real user gesture.
+// Auto-reconnect happens with no click at all, so retry resume() on the
+// first interaction the user makes anywhere on the page.
+document.addEventListener(
+  "pointerdown",
+  () => {
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  },
+  { once: true }
+);
+
+function playAudioChunk(buffer) {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: AUDIO_SAMPLE_RATE });
+    nextPlayTime = audioCtx.currentTime;
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+
+  const int16 = new Int16Array(buffer);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+  const audioBuffer = audioCtx.createBuffer(1, float32.length, AUDIO_SAMPLE_RATE);
+  audioBuffer.copyToChannel(float32, 0);
+
+  const source = audioCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioCtx.destination);
+
+  // Schedule back-to-back so chunks play in a continuous stream instead of
+  // stacking on top of each other or leaving silent gaps between them.
+  const startAt = Math.max(nextPlayTime, audioCtx.currentTime);
+  source.start(startAt);
+  nextPlayTime = startAt + audioBuffer.duration;
+}
+
 function wsUrl() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/ws`;
@@ -43,7 +87,13 @@ function connect(code) {
 
   ws.addEventListener("message", (ev) => {
     if (ev.data instanceof ArrayBuffer) {
-      renderFrame(ev.data).catch((err) => console.error("[hp_remote] renderFrame failed:", err));
+      const type = new Uint8Array(ev.data, 0, 1)[0];
+      const payload = ev.data.slice(1);
+      if (type === FRAME_TYPE_VIDEO) {
+        renderFrame(payload).catch((err) => console.error("[hp_remote] renderFrame failed:", err));
+      } else if (type === FRAME_TYPE_AUDIO) {
+        playAudioChunk(payload);
+      }
       return;
     }
     try {

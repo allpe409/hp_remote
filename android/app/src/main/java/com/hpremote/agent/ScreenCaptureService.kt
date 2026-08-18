@@ -1,16 +1,22 @@
 package com.hpremote.agent
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
-import android.content.pm.ServiceInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
+import android.media.AudioRecord
 import android.media.ImageReader
+import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -20,6 +26,7 @@ import android.os.IBinder
 import android.util.DisplayMetrics
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import java.io.ByteArrayOutputStream
 
 class ScreenCaptureService : Service() {
@@ -30,6 +37,10 @@ class ScreenCaptureService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val MIN_FRAME_INTERVAL_MS = 150L
         private const val JPEG_QUALITY = 60
+
+        private const val AUDIO_SAMPLE_RATE = 16000
+        private const val AUDIO_CHANNEL = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT
 
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
@@ -43,6 +54,14 @@ class ScreenCaptureService : Service() {
     private lateinit var handlerThread: HandlerThread
     private lateinit var handler: Handler
     private var lastFrameSentAt = 0L
+
+    private var capturedWidth = 0
+    private var capturedHeight = 0
+
+    private var micRecord: AudioRecord? = null
+    private var playbackRecord: AudioRecord? = null
+    private var audioThread: Thread? = null
+    @Volatile private var audioRunning = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -71,7 +90,11 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        RelayConnection.connect(serverUrl, pairCode)
+        RelayConnection.connect(serverUrl, pairCode, onRegistered = {
+            // Only safe to send once the server has this connection marked as the
+            // device for this session - sending earlier gets silently dropped.
+            RelayConnection.sendInfo(capturedWidth, capturedHeight)
+        })
         RelayConnection.commandListener = { msg ->
             RemoteAccessibilityService.instance?.handleCommand(msg)
         }
@@ -86,6 +109,7 @@ class ScreenCaptureService : Service() {
         }, handler)
 
         startCapture(projection)
+        startAudioCapture(projection)
         return START_NOT_STICKY
     }
 
@@ -96,8 +120,8 @@ class ScreenCaptureService : Service() {
         val width = metrics.widthPixels
         val height = metrics.heightPixels
         val density = metrics.densityDpi
-
-        RelayConnection.sendInfo(width, height)
+        capturedWidth = width
+        capturedHeight = height
 
         val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         imageReader = reader
@@ -145,6 +169,93 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    /**
+     * Captures mic input and (on Android 10+) the device's own playback audio,
+     * mixes them into one mono PCM16 stream and relays it. Either source is
+     * silently skipped if unavailable (no mic permission, or API < 29 for
+     * playback capture) rather than failing the whole screen share.
+     */
+    private fun startAudioCapture(projection: MediaProjection) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "no RECORD_AUDIO permission, skipping audio capture")
+            return
+        }
+
+        val minBuf = AudioRecord.getMinBufferSize(AUDIO_SAMPLE_RATE, AUDIO_CHANNEL, AUDIO_ENCODING)
+        if (minBuf <= 0) return
+
+        micRecord = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL, AUDIO_ENCODING, minBuf
+            ).also { it.startRecording() }
+        } catch (e: Exception) {
+            Log.w(TAG, "mic capture unavailable", e)
+            null
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            playbackRecord = try {
+                val captureConfig = AudioPlaybackCaptureConfiguration.Builder(projection)
+                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                    .build()
+                val format = AudioFormat.Builder()
+                    .setEncoding(AUDIO_ENCODING)
+                    .setSampleRate(AUDIO_SAMPLE_RATE)
+                    .setChannelMask(AUDIO_CHANNEL)
+                    .build()
+                AudioRecord.Builder()
+                    .setAudioFormat(format)
+                    .setBufferSizeInBytes(minBuf)
+                    .setAudioPlaybackCaptureConfig(captureConfig)
+                    .build()
+                    .also { it.startRecording() }
+            } catch (e: Exception) {
+                Log.w(TAG, "system audio capture unavailable", e)
+                null
+            }
+        }
+
+        if (micRecord == null && playbackRecord == null) return
+
+        audioRunning = true
+        audioThread = Thread({ runAudioLoop(minBuf) }, "AudioCaptureThread").apply { start() }
+    }
+
+    private fun runAudioLoop(bufferSize: Int) {
+        val micBuf = ShortArray(bufferSize / 2)
+        val playBuf = ShortArray(bufferSize / 2)
+        while (audioRunning) {
+            val micRead = micRecord?.read(micBuf, 0, micBuf.size) ?: 0
+            val playRead = playbackRecord?.read(playBuf, 0, playBuf.size) ?: 0
+            val n = maxOf(micRead, playRead)
+            if (n <= 0) continue
+
+            val out = ByteArray(n * 2)
+            for (i in 0 until n) {
+                val m = if (i < micRead) micBuf[i].toInt() else 0
+                val p = if (i < playRead) playBuf[i].toInt() else 0
+                val sum = (m + p).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                out[i * 2] = (sum and 0xFF).toByte()
+                out[i * 2 + 1] = ((sum shr 8) and 0xFF).toByte()
+            }
+            RelayConnection.sendAudio(out)
+        }
+    }
+
+    private fun stopAudioCapture() {
+        audioRunning = false
+        audioThread?.join(500)
+        audioThread = null
+        micRecord?.let { it.stop(); it.release() }
+        playbackRecord?.let { it.stop(); it.release() }
+        micRecord = null
+        playbackRecord = null
+    }
+
     private fun windowManager() = getSystemService(android.view.WindowManager::class.java)
 
     private fun buildNotification(): Notification {
@@ -165,6 +276,7 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopAudioCapture()
         virtualDisplay?.release()
         imageReader?.close()
         mediaProjection?.stop()
