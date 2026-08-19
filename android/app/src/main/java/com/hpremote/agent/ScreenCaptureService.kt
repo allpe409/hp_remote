@@ -248,10 +248,16 @@ class ScreenCaptureService : Service() {
 
     private fun stopAudioCapture() {
         audioRunning = false
+        // Stop the recorders first so a blocking read() on the audio thread
+        // returns immediately instead of only noticing audioRunning once new
+        // data happens to arrive (which, with the mic idle, could be never -
+        // leaving the mic privacy indicator on indefinitely).
+        micRecord?.stop()
+        playbackRecord?.stop()
         audioThread?.join(500)
         audioThread = null
-        micRecord?.let { it.stop(); it.release() }
-        playbackRecord?.let { it.stop(); it.release() }
+        micRecord?.release()
+        playbackRecord?.release()
         micRecord = null
         playbackRecord = null
     }
