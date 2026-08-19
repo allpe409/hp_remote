@@ -6,8 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
 import androidx.appcompat.app.AppCompatActivity
@@ -49,6 +51,11 @@ class MainActivity : AppCompatActivity() {
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { startCaptureFlow() }
 
+    // Also ignored on purpose - whether or not the user allows this, we continue
+    // to the mic/screen-share prompts either way.
+    private val batteryOptLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { requestMicThenCapture() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -66,17 +73,37 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
-        // Ask for mic + screen-capture consent as soon as the app opens, so the only
-        // taps left are Android's own system consent dialogs (those can't be skipped -
-        // they're an OS-enforced security boundary, not something this app controls).
-        if (savedInstanceState == null) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            } else {
-                startCaptureFlow()
-            }
+        // Ask for battery-optimization exemption, mic, then screen-capture consent
+        // as soon as the app opens, so the only taps left are Android's own system
+        // consent dialogs (those can't be skipped - they're an OS-enforced security
+        // boundary, not something this app controls).
+        if (savedInstanceState == null) requestBatteryExemptionThenMicThenCapture()
+    }
+
+    private fun requestBatteryExemptionThenMicThenCapture() {
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+            // Without this, some manufacturers' aggressive battery savers can kill
+            // the foreground service in the background even though a foreground
+            // service is normally exempt - this keeps screen sharing alive until
+            // the user actually taps "화면 공유 중지", not whenever the screen locks.
+            val intent = Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName")
+            )
+            batteryOptLauncher.launch(intent)
+        } else {
+            requestMicThenCapture()
+        }
+    }
+
+    private fun requestMicThenCapture() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            startCaptureFlow()
         }
     }
 
