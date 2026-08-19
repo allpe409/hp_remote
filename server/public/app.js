@@ -51,7 +51,14 @@ function playAudioChunk(buffer) {
   source.connect(audioCtx.destination);
 
   // Schedule back-to-back so chunks play in a continuous stream instead of
-  // stacking on top of each other or leaving silent gaps between them.
+  // stacking on top of each other or leaving silent gaps between them. But if
+  // the queued backlog has drifted too far ahead of real time (network
+  // jitter, video frames hogging the connection, etc), catch up by dropping
+  // the backlog instead of playing everything increasingly late forever.
+  const MAX_LAG_SEC = 0.3;
+  if (nextPlayTime - audioCtx.currentTime > MAX_LAG_SEC) {
+    nextPlayTime = audioCtx.currentTime;
+  }
   const startAt = Math.max(nextPlayTime, audioCtx.currentTime);
   source.start(startAt);
   nextPlayTime = startAt + audioBuffer.duration;
