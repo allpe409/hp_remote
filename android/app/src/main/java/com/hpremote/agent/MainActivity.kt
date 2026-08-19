@@ -65,19 +65,15 @@ class MainActivity : AppCompatActivity() {
         binding.textCode.text = pairingCode
         binding.editServerUrl.setText(prefs.getString(PREF_SERVER_URL, null) ?: defaultServerUrl())
 
-        binding.btnStart.setOnClickListener { startCaptureFlow() }
+        // All consent dialogs (battery exemption, mic, screen-capture) only appear
+        // when the user actually taps this button - not automatically on open.
+        binding.btnStart.setOnClickListener { requestBatteryExemptionThenMicThenCapture() }
         binding.btnStop.setOnClickListener {
             stopService(Intent(this, ScreenCaptureService::class.java))
         }
         binding.btnOpenAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-
-        // Ask for battery-optimization exemption, mic, then screen-capture consent
-        // as soon as the app opens, so the only taps left are Android's own system
-        // consent dialogs (those can't be skipped - they're an OS-enforced security
-        // boundary, not something this app controls).
-        if (savedInstanceState == null) requestBatteryExemptionThenMicThenCapture()
     }
 
     private fun requestBatteryExemptionThenMicThenCapture() {
