@@ -241,10 +241,9 @@ textForm.addEventListener("submit", (e) => {
   textInput.value = "";
 });
 
-// --- remember the last working code and reconnect automatically on load ---
+// --- pre-fill the last working code, but only connect on an explicit click ---
 
 const savedCode = localStorage.getItem(LAST_CODE_KEY);
 if (savedCode && /^\d{6}$/.test(savedCode)) {
   codeInput.value = savedCode;
-  connect(savedCode);
 }
