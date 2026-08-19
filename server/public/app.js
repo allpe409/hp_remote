@@ -79,11 +79,7 @@ pairForm.addEventListener("submit", (e) => {
   connect(code);
 });
 
-const LAST_CODE_KEY = "hp_remote_code";
-let currentCode = null;
-
 function connect(code) {
-  currentCode = code;
   pairStatus.textContent = "연결 중...";
   ws = new WebSocket(wsUrl());
   ws.binaryType = "arraybuffer";
@@ -138,7 +134,6 @@ function handleMessage(msg) {
       if (deviceWidth && deviceHeight) setCanvasSize(deviceWidth, deviceHeight);
       showRemoteScreen();
       connStatus.textContent = "연결됨";
-      if (currentCode) localStorage.setItem(LAST_CODE_KEY, currentCode);
       break;
     case "info":
       deviceWidth = msg.width;
@@ -240,10 +235,3 @@ textForm.addEventListener("submit", (e) => {
   send({ type: "text", text });
   textInput.value = "";
 });
-
-// --- pre-fill the last working code, but only connect on an explicit click ---
-
-const savedCode = localStorage.getItem(LAST_CODE_KEY);
-if (savedCode && /^\d{6}$/.test(savedCode)) {
-  codeInput.value = savedCode;
-}
