@@ -85,6 +85,11 @@ class SendActivity : AppCompatActivity() {
             binding.layoutLocalSend.visibility = if (selectedMethod == ConnectionMethod.LOCAL_NETWORK) View.VISIBLE else View.GONE
             binding.layoutWifiDirectSend.visibility = if (selectedMethod == ConnectionMethod.WIFI_DIRECT) View.VISIBLE else View.GONE
             binding.layoutRelaySend.visibility = if (selectedMethod == ConnectionMethod.RELAY) View.VISIBLE else View.GONE
+            if (checkedId == binding.radioHotspotSend.id) {
+                binding.textLocalHintSend.text = "한쪽 폰에서 개인 핫스팟을 켜고 다른 폰이 그 핫스팟에 접속하세요"
+            } else {
+                binding.textLocalHintSend.text = "두 폰이 같은 공유기 Wi-Fi에 연결되어 있어야 합니다"
+            }
         }
 
         binding.btnConnectSend.setOnClickListener {

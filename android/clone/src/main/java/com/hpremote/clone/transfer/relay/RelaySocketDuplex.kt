@@ -77,7 +77,10 @@ class RelaySocketDuplex private constructor(private val webSocket: WebSocket) : 
             // countDown(), and CountDownLatch.await() happens-after that countDown().
             var failure: Exception? = null
 
-            lateinit var duplex: RelaySocketDuplex
+            // A plain nullable var (not lateinit) - referencing a local lateinit var's
+            // ::isInitialized from inside a nested anonymous object isn't supported by
+            // the Kotlin compiler.
+            var duplexRef: RelaySocketDuplex? = null
             val request = Request.Builder().url(serverUrl).build()
             val webSocket = client.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -108,7 +111,7 @@ class RelaySocketDuplex private constructor(private val webSocket: WebSocket) : 
                 }
 
                 override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                    if (::duplex.isInitialized) duplex.deliver(bytes.toByteArray())
+                    duplexRef?.deliver(bytes.toByteArray())
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -119,7 +122,8 @@ class RelaySocketDuplex private constructor(private val webSocket: WebSocket) : 
                 }
             })
 
-            duplex = RelaySocketDuplex(webSocket)
+            val duplex = RelaySocketDuplex(webSocket)
+            duplexRef = duplex
 
             if (!registeredLatch.await(CONNECT_TIMEOUT_SEC, TimeUnit.SECONDS)) {
                 throw IOException("릴레이 서버 연결 시간 초과")
