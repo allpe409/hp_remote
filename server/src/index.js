@@ -16,6 +16,15 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 /** @type {Map<string, { device: import("ws").WebSocket|null, controller: import("ws").WebSocket|null, width: number, height: number }>} */
 const sessions = new Map();
 
+/**
+ * Separate pairing space for hp_clone (phone-to-phone data clone). Kept apart
+ * from `sessions` above so a code in use by one feature can't collide with
+ * the other. Once both sides are present, binary frames are relayed
+ * untouched in both directions - the server never parses the clone protocol.
+ * @type {Map<string, { host: import("ws").WebSocket|null, peer: import("ws").WebSocket|null }>}
+ */
+const cloneSessions = new Map();
+
 function send(ws, obj) {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
@@ -23,8 +32,14 @@ function send(ws, obj) {
 wss.on("connection", (ws) => {
   ws.role = null;
   ws.code = null;
+  ws.isClone = false;
 
   ws.on("message", (data, isBinary) => {
+    if (ws.isClone) {
+      handleCloneMessage(ws, data, isBinary);
+      return;
+    }
+
     // Binary messages are always screen frames coming from the device;
     // relay them untouched to the paired controller.
     if (isBinary) {
@@ -38,6 +53,11 @@ wss.on("connection", (ws) => {
     try {
       msg = JSON.parse(data.toString());
     } catch {
+      return;
+    }
+
+    if (msg.type === "register-clone") {
+      handleRegisterClone(ws, msg);
       return;
     }
 
@@ -65,6 +85,16 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    if (ws.isClone) {
+      if (!ws.code) return;
+      const cloneSession = cloneSessions.get(ws.code);
+      if (!cloneSession) return;
+      if (ws.role === "host") cloneSession.host = null;
+      if (ws.role === "peer") cloneSession.peer = null;
+      if (!cloneSession.host && !cloneSession.peer) cloneSessions.delete(ws.code);
+      return;
+    }
+
     if (!ws.code) return;
     const session = sessions.get(ws.code);
     if (!session) return;
@@ -78,6 +108,45 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+/** hp_clone: relays binary frames verbatim between the paired host and peer. */
+function handleCloneMessage(ws, data, isBinary) {
+  if (!isBinary || !ws.code) return;
+  const session = cloneSessions.get(ws.code);
+  if (!session) return;
+  const other = ws.role === "host" ? session.peer : session.host;
+  if (other) other.send(data, { binary: true });
+}
+
+function handleRegisterClone(ws, msg) {
+  const code = String(msg.code || "").trim();
+  if (!/^\d{6}$/.test(code)) {
+    send(ws, { type: "error", message: "invalid pairing code" });
+    return;
+  }
+  if (msg.role !== "host" && msg.role !== "peer") {
+    send(ws, { type: "error", message: "unknown role" });
+    return;
+  }
+
+  const existing = cloneSessions.get(code) ?? { host: null, peer: null };
+  if (existing[msg.role]) {
+    send(ws, { type: "error", message: "code already in use" });
+    return;
+  }
+  existing[msg.role] = ws;
+  cloneSessions.set(code, existing);
+
+  ws.isClone = true;
+  ws.role = msg.role;
+  ws.code = code;
+  send(ws, { type: "registered" });
+
+  if (existing.host && existing.peer) {
+    send(existing.host, { type: "peer-joined" });
+    send(existing.peer, { type: "peer-joined" });
+  }
+}
 
 function handleRegister(ws, msg) {
   const code = String(msg.code || "").trim();

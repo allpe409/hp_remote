@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "hp-remote-agent"
 include(":app")
+include(":clone")
