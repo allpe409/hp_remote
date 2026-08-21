@@ -32,29 +32,37 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hp-remote-agent-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app-remote/build/outputs/apk/debug/app-remote-debug.apk
 
       - name: Upload hp_remote 폰 복제 artifact
         uses: actions/upload-artifact@v4
         with:
           name: hp-remote-clone-debug-apk
-          path: android/clone/build/outputs/apk/debug/clone-debug.apk
+          path: android/app-clone/build/outputs/apk/debug/app-clone-debug.apk
+
+      - name: Upload hp_control artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hp-control-debug-apk
+          path: android/app-control/build/outputs/apk/debug/app-control-debug.apk
 
       - name: Publish install link (release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
-          name: hp_remote Agent - latest build
+          name: hp_control - latest build
           body: |
-            자동 빌드된 hp_remote 안드로이드 앱(디버그 빌드)입니다.
+            자동 빌드된 안드로이드 앱(디버그 빌드)입니다.
 
-            - app-debug.apk: 화면 미러링 / 원격 제어 (hp_remote Agent)
-            - clone-debug.apk: 폰 데이터 복제 (hp_remote 폰 복제)
+            - app-control-debug.apk: 원격 제어 + 폰 복제 통합 앱 (hp_control) - 보통 이것만 설치하면 됩니다
+            - app-remote-debug.apk: 화면 미러링 / 원격 제어만 (hp_remote Agent)
+            - app-clone-debug.apk: 폰 데이터 복제만 (hp_remote 폰 복제)
 
             원하는 apk를 폰에서 다운로드해 설치하세요.
             (설치 시 "출처를 알 수 없는 앱 설치 허용"이 필요할 수 있습니다.)
 
             커밋: ${{ github.sha }}
           files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/clone/build/outputs/apk/debug/clone-debug.apk
+            android/app-remote/build/outputs/apk/debug/app-remote-debug.apk
+            android/app-clone/build/outputs/apk/debug/app-clone-debug.apk
+            android/app-control/build/outputs/apk/debug/app-control-debug.apk

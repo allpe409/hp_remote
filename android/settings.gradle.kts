@@ -14,6 +14,9 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "hp-remote-agent"
-include(":app")
-include(":clone")
+rootProject.name = "hp-control"
+include(":feature-remote")
+include(":feature-clone")
+include(":app-remote")
+include(":app-clone")
+include(":app-control")
