@@ -11,8 +11,6 @@ android/*.iml
 android/**/*.iml
 android/captures/
 android/.cxx/
-android/app/release/
-android/app/debug/
 
 # OS
 .DS_Store

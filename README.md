@@ -1,15 +1,31 @@
 # hp_remote
 
-Android 기기의 화면을 PC 웹 브라우저에서 보고, 터치·스와이프·키 입력으로 원격 조작하는 프로그램입니다.
+Android 기기의 화면을 PC 웹 브라우저에서 보고, 터치·스와이프·키 입력으로 원격 조작하는 프로그램입니다. 같은 저장소에 폰 데이터 복제 기능(hp_clone)도 함께 들어 있습니다.
+
+> 저장소 이름을 `hp_control`로 바꾸는 건 GitHub 저장소 설정(Settings → Repository name)에서 직접 해야 합니다 - 세션 도구로는 저장소 이름을 바꿀 수 없습니다. 코드 쪽 모듈/앱 이름은 이미 `hp_control` 기준으로 맞춰뒀습니다.
 
 ## 구조
 
+기능(화면·로직)과 앱 껍데기를 분리한 멀티모듈 구조입니다. `feature-*`는 라이브러리 모듈이라 그 자체로는 설치할 수 없고, `app-*` 중 하나에 포함되어야 apk가 나옵니다.
+
 ```
-android/app/    Android 앱 (원격 조작을 당하는 폰에 설치) - hp_remote Agent
-android/clone/  Android 앱 (폰 -> 폰 데이터 복제, 별도 앱) - hp_remote 폰 복제
-server/         Node.js 중계 서버 (폰 <-> 웹 컨트롤러 WebSocket 릴레이)
-server/public/  PC 브라우저용 컨트롤러 UI (server가 정적 파일로 서빙)
+android/
+├── feature-remote/   화면 미러링/원격 제어 화면·로직 (라이브러리, 패키지 com.hpremote.agent)
+├── feature-clone/    폰 데이터 복제 화면·로직 (라이브러리, 패키지 com.hpremote.clone)
+├── app-remote/       hp_remote Agent 단독 apk (feature-remote만 포함)
+├── app-clone/        hp_remote 폰 복제 단독 apk (feature-clone만 포함)
+├── app-control/      hp_control 통합 apk (feature-remote + feature-clone, 홈 화면에서 선택)
+└── keystore/         3개 app-* 모듈이 공유하는 디버그 서명 키
+server/               Node.js 중계 서버 (폰 <-> 웹 컨트롤러 WebSocket 릴레이 + hp_clone 인터넷 경유 릴레이)
+server/public/        PC 브라우저용 컨트롤러 UI (server가 정적 파일로 서빙)
 ```
+
+`core` 모듈은 일부러 만들지 않았습니다 - 두 기능이 지금 실제로 공유하는 코드가 없어서(통신 프로토콜부터 다름) 빈 모듈만 두는 게 의미가 없기 때문입니다. 나중에 실제로 공유할 코드가 생기면 그때 뽑아내면 됩니다.
+
+세 가지 설치 옵션이 있습니다:
+- **원격 제어만 필요** → `app-remote` 설치 (applicationId `com.hpremote.agent`)
+- **폰 복제만 필요** → `app-clone` 설치 (applicationId `com.hpremote.clone`)
+- **둘 다 한 앱으로** → `app-control` 설치 (applicationId `com.hpremote.control`) - 실행하면 첫 화면에서 "원격 제어" / "데이터 복제" 중 선택하고, 그 다음은 각 기능 화면(복제라면 기존처럼 보내기/받기 → 연결 방식 선택)으로 그대로 이어집니다.
 
 ### 동작 방식
 
@@ -58,9 +74,9 @@ PC 브라우저에서 `http://<서버IP>:8080` 접속 → 폰 앱에 표시된 6
 - 화면 스트리밍은 WebSocket + JPEG 프레임 방식으로, 지연시간이 WebRTC 대비 다소 높습니다(수백 ms 대). 프레임 전송 주기는 `ScreenCaptureService.MIN_FRAME_INTERVAL_MS`(기본 150ms)로 조절할 수 있습니다.
 - 텍스트 입력(`text` 명령)은 현재 포커스된 입력란이 있어야 동작합니다(접근성 API의 `ACTION_SET_TEXT` 사용).
 
-## hp_remote 폰 복제 (`android/clone`)
+## hp_remote 폰 복제 (`android/feature-clone`)
 
-기존 폰의 데이터를 새 폰으로 옮기는 별도 앱입니다. 위 화면 미러링 앱과는 독립적으로 동작하며(별도 `applicationId`), 필요해지면 나중에 하나로 합칠 수 있도록 같은 Gradle 프로젝트 안에 모듈로 뒀습니다.
+기존 폰의 데이터를 새 폰으로 옮기는 기능입니다. `app-clone`으로 단독 설치하거나, `app-control`로 원격 제어와 한 앱에 합쳐서 설치할 수 있습니다.
 
 - 연결 방식을 먼저 고르고, 그다음 복제할 데이터를 선택합니다. 세 가지 방식 중 선택 가능:
   - **같은 네트워크** — 같은 Wi-Fi 공유기 또는 한쪽 폰의 개인 핫스팟. 서버 없이 직접 TCP(포트 `58642`)로 통신.
