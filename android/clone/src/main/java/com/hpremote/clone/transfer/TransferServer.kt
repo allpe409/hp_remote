@@ -8,28 +8,22 @@ import com.hpremote.clone.data.MediaImporter
 import com.hpremote.clone.data.SmsImporter
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.net.ServerSocket
-import java.net.Socket
 
 class TransferServer(
     private val context: Context,
     private val pin: String,
+    private val acceptor: DuplexAcceptor,
     private val onProgress: (TransferProgress) -> Unit,
     private val onDone: (success: Boolean, message: String) -> Unit
 ) {
-    @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var stopping = false
 
     fun start() {
         stopping = false
         Thread {
             try {
-                val socket = ServerSocket(TRANSFER_PORT)
-                serverSocket = socket
-                val client = socket.accept()
-                handleClient(client)
+                val duplex = acceptor.accept()
+                handleClient(duplex)
             } catch (e: Exception) {
                 if (!stopping) onDone(false, "오류: ${e.message}")
             }
@@ -38,11 +32,7 @@ class TransferServer(
 
     fun stop() {
         stopping = true
-        try {
-            serverSocket?.close()
-        } catch (e: Exception) {
-            // Already closed / never opened - nothing to do.
-        }
+        acceptor.cancel()
     }
 
     // APP_LIST is handled separately by the caller (display-only, no importer).
@@ -54,10 +44,10 @@ class TransferServer(
         else -> 0
     }
 
-    private fun handleClient(socket: Socket) {
-        socket.use {
-            val input = DataInputStream(socket.getInputStream())
-            val output = DataOutputStream(socket.getOutputStream())
+    private fun handleClient(duplex: Duplex) {
+        duplex.use {
+            val input = duplex.input
+            val output = duplex.output
 
             val receivedPin = input.readUTF()
             if (receivedPin != pin) {

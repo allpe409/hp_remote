@@ -14,24 +14,114 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="이 화면을 켜 둔 채로, 기존 폰에서 아래 정보를 입력하세요"
-            android:textSize="14sp" />
+            android:text="연결 방식"
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
-        <TextView
-            android:layout_width="wrap_content"
+        <RadioGroup
+            android:id="@+id/radio_method_receive"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="이 폰의 IP 주소"
-            android:textSize="14sp" />
+            android:layout_marginTop="8dp">
 
-        <TextView
-            android:id="@+id/text_ip"
-            android:layout_width="wrap_content"
+            <RadioButton
+                android:id="@+id/radio_local_receive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="같은 네트워크 (같은 Wi-Fi 또는 핫스팟)" />
+
+            <RadioButton
+                android:id="@+id/radio_wifi_direct_receive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Wi-Fi Direct (가장 빠름, 공유기 불필요)" />
+
+            <RadioButton
+                android:id="@+id/radio_relay_receive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="인터넷 경유 (다른 네트워크에서도 가능, 느릴 수 있음)" />
+
+        </RadioGroup>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="#33000000" />
+
+        <LinearLayout
+            android:id="@+id/layout_local_receive"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="28sp"
-            android:textStyle="bold"
-            tools:text="192.168.0.5" />
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:gravity="center_horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="이 폰의 IP 주소"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/text_ip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                tools:text="192.168.0.5" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_wifi_direct_receive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="아래 버튼을 눌러 Wi-Fi Direct 대기를 시작하세요"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/text_wifi_direct_status_receive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text=""
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_relay_receive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="릴레이 서버 주소"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/edit_relay_url_receive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:inputType="textUri"
+                android:autofillHints="" />
+
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

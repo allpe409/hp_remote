@@ -1,32 +1,108 @@
 package com.hpremote.clone
 
 import android.os.Bundle
+import android.view.View
+import android.widget.ArrayAdapter
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.hpremote.clone.databinding.ActivitySendBinding
 import com.hpremote.clone.transfer.Category
+import com.hpremote.clone.transfer.ConnectionMethod
+import com.hpremote.clone.transfer.DEFAULT_RELAY_URL
+import com.hpremote.clone.transfer.DuplexConnector
+import com.hpremote.clone.transfer.LocalConnector
+import com.hpremote.clone.transfer.TRANSFER_PORT
 import com.hpremote.clone.transfer.TimeEstimate
 import com.hpremote.clone.transfer.TransferClient
 import com.hpremote.clone.transfer.categoryLabel
+import com.hpremote.clone.transfer.relay.RelayConnector
+import com.hpremote.clone.wifidirect.WifiDirectHelper
+import com.hpremote.clone.wifidirect.WifiDirectPeer
 
 class SendActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySendBinding
+    private var selectedMethod = ConnectionMethod.LOCAL_NETWORK
+    private val wifiDirect by lazy { WifiDirectHelper(this) }
+    private var discoveredPeers: List<WifiDirectPeer> = emptyList()
+    private var wifiDirectHost: String? = null
 
-    private val permissionLauncher =
+    private val sendPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { showEstimateThenStart() }
+
+    private val wifiDirectPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            wifiDirect.register()
+            binding.textWifiDirectStatusSend.text = "검색 중..."
+            wifiDirect.discoverPeers()
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySendBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.editRelayUrlSend.setText(DEFAULT_RELAY_URL)
+
+        val peerAdapter = ArrayAdapter<String>(this, android.R.layout.simple_list_item_1)
+        binding.listPeers.adapter = peerAdapter
+        wifiDirect.onPeersChanged = { peers ->
+            runOnUiThread {
+                discoveredPeers = peers
+                peerAdapter.clear()
+                peerAdapter.addAll(peers.map { it.name })
+                binding.textWifiDirectStatusSend.text = if (peers.isEmpty()) "주변에서 기기를 찾지 못했습니다" else "기기를 선택하세요"
+            }
+        }
+        binding.listPeers.setOnItemClickListener { _, _, position, _ ->
+            val peer = discoveredPeers.getOrNull(position) ?: return@setOnItemClickListener
+            binding.textWifiDirectStatusSend.text = "${peer.name}에 연결 중..."
+            wifiDirect.connectToPeer(
+                peer.address,
+                onConnected = { ip ->
+                    runOnUiThread {
+                        wifiDirectHost = ip
+                        binding.textWifiDirectStatusSend.text = "${peer.name}에 연결됨"
+                    }
+                },
+                onFailed = { message ->
+                    runOnUiThread { binding.textWifiDirectStatusSend.text = message }
+                }
+            )
+        }
+        binding.btnScanPeers.setOnClickListener {
+            wifiDirectHost = null
+            wifiDirectPermissionLauncher.launch(PermissionsHelper.wifiDirectPermissions())
+        }
+
+        binding.radioMethodSend.setOnCheckedChangeListener { _, checkedId ->
+            selectedMethod = when (checkedId) {
+                binding.radioWifiDirectSend.id -> ConnectionMethod.WIFI_DIRECT
+                binding.radioRelaySend.id -> ConnectionMethod.RELAY
+                else -> ConnectionMethod.LOCAL_NETWORK
+            }
+            binding.layoutLocalSend.visibility = if (selectedMethod == ConnectionMethod.LOCAL_NETWORK) View.VISIBLE else View.GONE
+            binding.layoutWifiDirectSend.visibility = if (selectedMethod == ConnectionMethod.WIFI_DIRECT) View.VISIBLE else View.GONE
+            binding.layoutRelaySend.visibility = if (selectedMethod == ConnectionMethod.RELAY) View.VISIBLE else View.GONE
+        }
+
         binding.btnConnectSend.setOnClickListener {
-            val host = binding.editHost.text.toString().trim()
             val pin = binding.editPin.text.toString().trim()
-            if (host.isEmpty() || pin.length != 6) {
-                binding.textStatusSend.text = "새 폰의 IP와 6자리 PIN을 입력하세요"
+            if (pin.length != 6) {
+                binding.textStatusSend.text = "6자리 PIN을 입력하세요"
+                return@setOnClickListener
+            }
+            if (selectedMethod == ConnectionMethod.LOCAL_NETWORK && binding.editHost.text.toString().trim().isEmpty()) {
+                binding.textStatusSend.text = "새 폰의 IP를 입력하세요"
+                return@setOnClickListener
+            }
+            if (selectedMethod == ConnectionMethod.WIFI_DIRECT && wifiDirectHost == null) {
+                binding.textStatusSend.text = "먼저 주변 기기를 검색해 연결하세요"
+                return@setOnClickListener
+            }
+            if (selectedMethod == ConnectionMethod.RELAY && binding.editRelayUrlSend.text.toString().trim().isEmpty()) {
+                binding.textStatusSend.text = "릴레이 서버 주소를 입력하세요"
                 return@setOnClickListener
             }
             if (selectedCategories().isEmpty()) {
@@ -38,7 +114,7 @@ class SendActivity : AppCompatActivity() {
             binding.textCategoryIndexSend.text = ""
             binding.progressCategorySend.progress = 0
             binding.progressOverallSend.progress = 0
-            permissionLauncher.launch(PermissionsHelper.sendPermissions())
+            sendPermissionLauncher.launch(PermissionsHelper.sendPermissions())
         }
     }
 
@@ -54,6 +130,15 @@ class SendActivity : AppCompatActivity() {
             result += Category.VIDEO
         }
         return result
+    }
+
+    private fun buildConnector(): DuplexConnector? {
+        val pin = binding.editPin.text.toString().trim()
+        return when (selectedMethod) {
+            ConnectionMethod.LOCAL_NETWORK -> LocalConnector(binding.editHost.text.toString().trim(), TRANSFER_PORT)
+            ConnectionMethod.WIFI_DIRECT -> wifiDirectHost?.let { LocalConnector(it, TRANSFER_PORT) }
+            ConnectionMethod.RELAY -> RelayConnector(binding.editRelayUrlSend.text.toString().trim(), pin)
+        }
     }
 
     // Before actually connecting, size up each selected category (fastest-first order)
@@ -85,13 +170,18 @@ class SendActivity : AppCompatActivity() {
     }
 
     private fun startTransfer() {
-        val host = binding.editHost.text.toString().trim()
+        val connector = buildConnector()
+        if (connector == null) {
+            binding.textStatusSend.text = "연결 정보가 없습니다. 다시 시도하세요"
+            binding.btnConnectSend.isEnabled = true
+            return
+        }
         val pin = binding.editPin.text.toString().trim()
         val categories = selectedCategories()
 
         TransferClient(
             context = applicationContext,
-            host = host,
+            connector = connector,
             pin = pin,
             categories = categories,
             onProgress = { p ->
@@ -110,5 +200,13 @@ class SendActivity : AppCompatActivity() {
                 }
             }
         ).start()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (selectedMethod == ConnectionMethod.WIFI_DIRECT) {
+            wifiDirect.removeGroup()
+            wifiDirect.unregister()
+        }
     }
 }

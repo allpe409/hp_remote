@@ -38,6 +38,15 @@ object PermissionsHelper {
         return perms.toTypedArray()
     }
 
+    /** Needed by both phones before using Wi-Fi Direct (peer discovery requires location access). */
+    fun wifiDirectPermissions(): Array<String> {
+        val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms += Manifest.permission.NEARBY_WIFI_DEVICES
+        }
+        return perms.toTypedArray()
+    }
+
     /** Null if this app already holds (or can't hold) the default-SMS role - nothing more to ask. */
     fun createSmsRoleIntent(context: Context): Intent? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

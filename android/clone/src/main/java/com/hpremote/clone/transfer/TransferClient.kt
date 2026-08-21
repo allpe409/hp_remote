@@ -10,14 +10,10 @@ import com.hpremote.clone.data.MediaFile
 import com.hpremote.clone.data.SmsExporter
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.net.InetSocketAddress
-import java.net.Socket
 
 class TransferClient(
     private val context: Context,
-    private val host: String,
+    private val connector: DuplexConnector,
     private val pin: String,
     private val categories: Set<Category>,
     private val onProgress: (TransferProgress) -> Unit,
@@ -55,10 +51,9 @@ class TransferClient(
     }
 
     private fun run() {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(host, TRANSFER_PORT), 8000)
-            val input = DataInputStream(socket.getInputStream())
-            val output = DataOutputStream(socket.getOutputStream())
+        connector.connect().use { duplex ->
+            val input = duplex.input
+            val output = duplex.output
 
             output.writeUTF(pin)
             output.flush()

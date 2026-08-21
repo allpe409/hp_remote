@@ -12,23 +12,126 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="새 폰에 표시된 IP와 PIN을 입력하세요"
-            android:textSize="14sp" />
+            android:text="연결 방식"
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
-        <EditText
-            android:id="@+id/edit_host"
+        <RadioGroup
+            android:id="@+id/radio_method_send"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="192.168.0.5"
-            android:inputType="textUri"
-            android:autofillHints="" />
+            android:layout_marginTop="8dp">
+
+            <RadioButton
+                android:id="@+id/radio_local_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="같은 네트워크 (같은 Wi-Fi 또는 핫스팟)" />
+
+            <RadioButton
+                android:id="@+id/radio_wifi_direct_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Wi-Fi Direct (가장 빠름, 공유기 불필요)" />
+
+            <RadioButton
+                android:id="@+id/radio_relay_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="인터넷 경유 (다른 네트워크에서도 가능, 느릴 수 있음)" />
+
+        </RadioGroup>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="#33000000" />
+
+        <LinearLayout
+            android:id="@+id/layout_local_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="새 폰에 표시된 IP를 입력하세요"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/edit_host"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="192.168.0.5"
+                android:inputType="textUri"
+                android:autofillHints="" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_wifi_direct_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btn_scan_peers"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="주변 기기 검색" />
+
+            <ListView
+                android:id="@+id/list_peers"
+                android:layout_width="match_parent"
+                android:layout_height="160dp"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/text_wifi_direct_status_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text=""
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_relay_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="릴레이 서버 주소"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/edit_relay_url_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:inputType="textUri"
+                android:autofillHints="" />
+
+        </LinearLayout>
 
         <EditText
             android:id="@+id/edit_pin"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="16dp"
             android:hint="PIN 6자리"
             android:inputType="number"
             android:maxLength="6"

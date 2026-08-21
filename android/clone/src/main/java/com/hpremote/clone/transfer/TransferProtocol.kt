@@ -19,6 +19,15 @@ import java.io.DataOutputStream
  */
 const val TRANSFER_PORT = 58642
 
+/** Same server hp_remote Agent already uses (render.yaml auto-deploys it) - just a different message type. */
+const val DEFAULT_RELAY_URL = "wss://hp-remote-server.onrender.com/ws"
+
+enum class ConnectionMethod {
+    LOCAL_NETWORK,
+    WIFI_DIRECT,
+    RELAY
+}
+
 enum class Category(val tag: String) {
     APP_LIST("APP_LIST"),
     CONTACTS("CONTACTS"),
