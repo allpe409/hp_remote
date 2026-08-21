@@ -21,14 +21,16 @@ object AppListExporter {
 
     fun count(context: Context): Int = userApps(context).size
 
-    fun export(context: Context): JSONArray {
+    fun export(context: Context, onRecord: (Int, Int) -> Unit = { _, _ -> }): JSONArray {
         val pm = context.packageManager
         val result = JSONArray()
-        for (app in userApps(context)) {
+        val apps = userApps(context)
+        for (app in apps) {
             result.put(JSONObject().apply {
                 put("label", pm.getApplicationLabel(app).toString())
                 put("packageName", app.packageName)
             })
+            onRecord(result.length(), apps.size)
         }
         return result
     }

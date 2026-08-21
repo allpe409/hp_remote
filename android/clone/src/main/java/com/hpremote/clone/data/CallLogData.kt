@@ -15,7 +15,7 @@ object CallLogExporter {
         return 0
     }
 
-    fun export(context: Context): JSONArray {
+    fun export(context: Context, onRecord: (Int, Int) -> Unit = { _, _ -> }): JSONArray {
         val result = JSONArray()
         context.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
@@ -27,6 +27,7 @@ object CallLogExporter {
             val dateIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
             val durIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
             val nameIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)
+            val total = cursor.count
             while (cursor.moveToNext()) {
                 result.put(JSONObject().apply {
                     put("number", cursor.getString(numIdx) ?: "")
@@ -35,6 +36,7 @@ object CallLogExporter {
                     put("duration", cursor.getLong(durIdx))
                     put("name", cursor.getString(nameIdx) ?: "")
                 })
+                onRecord(result.length(), total)
             }
         }
         return result
@@ -43,10 +45,11 @@ object CallLogExporter {
 
 object CallLogImporter {
 
-    fun import(context: Context, records: JSONArray): Int {
+    fun import(context: Context, records: JSONArray, onRecord: (Int, Int) -> Unit = { _, _ -> }): Int {
         val resolver = context.contentResolver
         var imported = 0
-        for (i in 0 until records.length()) {
+        val total = records.length()
+        for (i in 0 until total) {
             val record = records.getJSONObject(i)
             val values = ContentValues().apply {
                 put(CallLog.Calls.NUMBER, record.optString("number"))
@@ -63,6 +66,7 @@ object CallLogImporter {
             } catch (e: Exception) {
                 // Skip this one record and keep going.
             }
+            onRecord(i + 1, total)
         }
         return imported
     }

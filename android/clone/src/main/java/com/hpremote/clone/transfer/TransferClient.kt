@@ -20,10 +20,10 @@ class TransferClient(
     private val host: String,
     private val pin: String,
     private val categories: Set<Category>,
-    private val onProgress: (log: String, percent: Int) -> Unit,
+    private val onProgress: (TransferProgress) -> Unit,
     private val onDone: (success: Boolean, message: String) -> Unit
 ) {
-    private val log = StringBuilder()
+    private val ordered = Category.ORDERED.filter { it in categories }
 
     fun start() {
         Thread {
@@ -35,23 +35,23 @@ class TransferClient(
         }.start()
     }
 
-    private fun progress(line: String, percent: Int) {
-        log.append(line).append('\n')
-        onProgress(log.toString(), percent)
-    }
-
-    // Reads a category via [export], recording zero records instead of aborting the
+    // Reads a category via [export], recording nothing instead of aborting the
     // whole transfer if this phone denied that permission.
-    private fun <T> safeExport(label: String, export: () -> T, empty: T): T {
+    private fun <T> safeExport(export: () -> T, empty: T): T {
         return try {
             export()
-        } catch (e: SecurityException) {
-            progress("권한 없음: $label - 건너뜀", 0)
-            empty
         } catch (e: Exception) {
-            progress("$label 읽기 실패: ${e.message}", 0)
             empty
         }
+    }
+
+    private fun exportStructured(category: Category, onRecord: (Int, Int) -> Unit): JSONArray = when (category) {
+        Category.CONTACTS -> ContactsExporter.export(context, onRecord)
+        Category.CALL_LOG -> CallLogExporter.export(context, onRecord)
+        Category.CALENDAR -> CalendarExporter.export(context, onRecord)
+        Category.SMS -> SmsExporter.export(context, onRecord)
+        Category.APP_LIST -> AppListExporter.export(context, onRecord)
+        else -> JSONArray()
     }
 
     private fun run() {
@@ -67,70 +67,59 @@ class TransferClient(
                 return
             }
 
-            val structured = LinkedHashMap<Category, JSONArray>()
-            if (Category.CONTACTS in categories) {
-                structured[Category.CONTACTS] = safeExport("연락처", { ContactsExporter.export(context) }, JSONArray())
-            }
-            if (Category.CALL_LOG in categories) {
-                structured[Category.CALL_LOG] = safeExport("통화 기록", { CallLogExporter.export(context) }, JSONArray())
-            }
-            if (Category.CALENDAR in categories) {
-                structured[Category.CALENDAR] = safeExport("캘린더", { CalendarExporter.export(context) }, JSONArray())
-            }
-            if (Category.SMS in categories) {
-                structured[Category.SMS] = safeExport("문자 메시지", { SmsExporter.export(context) }, JSONArray())
-            }
-            if (Category.APP_LIST in categories) {
-                structured[Category.APP_LIST] = safeExport("설치된 앱 목록", { AppListExporter.export(context) }, JSONArray())
-            }
-
-            val media = LinkedHashMap<Category, List<MediaFile>>()
-            if (Category.PHOTO in categories) {
-                media[Category.PHOTO] = safeExport("사진", { MediaExporter.list(context, Category.PHOTO) }, emptyList())
-            }
-            if (Category.VIDEO in categories) {
-                media[Category.VIDEO] = safeExport("동영상", { MediaExporter.list(context, Category.VIDEO) }, emptyList())
-            }
+            // A quick count/size pass (no JSON build, no file bytes read) just to size the manifest.
+            val estimates = ordered.associateWith { safeExport({ TimeEstimate.estimate(context, it) }, CategoryEstimate(it, 0, 0L, 0L)) }
 
             val manifest = JSONObject()
-            structured.forEach { (category, records) -> manifest.put(category.tag, records.length()) }
-            media.forEach { (category, files) -> manifest.put(category.tag, files.size) }
+            ordered.forEach { manifest.put(it.tag, estimates.getValue(it).count) }
             output.writeFrame(manifest.toString().toByteArray(Charsets.UTF_8))
 
-            var totalUnits = 0
-            val manifestKeys = manifest.keys()
-            while (manifestKeys.hasNext()) totalUnits += manifest.getInt(manifestKeys.next())
-            totalUnits = totalUnits.coerceAtLeast(1)
-            var doneUnits = 0
+            val totalUnits = ordered.sumOf { estimates.getValue(it).count }.coerceAtLeast(1)
+            var doneUnitsBeforeCategory = 0
 
-            for ((category, records) in structured) {
-                output.writeUTF(category.tag)
-                output.writeFrame(records.toString().toByteArray(Charsets.UTF_8))
-                doneUnits += records.length()
-                progress("보냄: ${categoryLabel(category)} ${records.length()}개", doneUnits * 100 / totalUnits)
-            }
+            for ((index, category) in ordered.withIndex()) {
+                val categoryIndex = index + 1
+                val categoryTotal = estimates.getValue(category).count.coerceAtLeast(1)
 
-            for ((category, files) in media) {
-                for (file in files) {
+                fun emit(categoryPercent: Int, withinCategoryUnits: Int, message: String) {
+                    val overall = ((doneUnitsBeforeCategory + withinCategoryUnits) * 100 / totalUnits).coerceIn(0, 100)
+                    onProgress(TransferProgress(categoryIndex, ordered.size, category, categoryPercent.coerceIn(0, 100), overall, message))
+                }
+
+                if (category.isMedia) {
+                    val files = safeExport({ MediaExporter.list(context, category) }, emptyList<MediaFile>())
+                    val total = files.size.coerceAtLeast(1)
+                    files.forEachIndexed { fi, file ->
+                        output.writeUTF(category.tag)
+                        val meta = JSONObject().apply {
+                            put("name", file.displayName)
+                            put("mime", file.mimeType)
+                            put("size", file.size)
+                        }
+                        output.writeFrame(meta.toString().toByteArray(Charsets.UTF_8))
+                        context.contentResolver.openInputStream(file.uri)?.use { ins ->
+                            copyExactly(ins, output, file.size)
+                        }
+                        output.flush()
+                        emit((fi + 1) * 100 / total, fi + 1, "보냄: ${categoryLabel(category)} - ${file.displayName}")
+                    }
+                    doneUnitsBeforeCategory += files.size
+                } else {
+                    val records = safeExport({
+                        exportStructured(category) { done, total ->
+                            emit(if (total > 0) done * 100 / total else 100, done, "내보내는 중: ${categoryLabel(category)} ($done/$total)")
+                        }
+                    }, JSONArray())
                     output.writeUTF(category.tag)
-                    val meta = JSONObject().apply {
-                        put("name", file.displayName)
-                        put("mime", file.mimeType)
-                        put("size", file.size)
-                    }
-                    output.writeFrame(meta.toString().toByteArray(Charsets.UTF_8))
-                    context.contentResolver.openInputStream(file.uri)?.use { ins ->
-                        copyExactly(ins, output, file.size)
-                    }
-                    output.flush()
-                    doneUnits++
-                    progress("보냄: ${categoryLabel(category)} - ${file.displayName}", doneUnits * 100 / totalUnits)
+                    output.writeFrame(records.toString().toByteArray(Charsets.UTF_8))
+                    doneUnitsBeforeCategory += records.length()
+                    emit(100, records.length(), "보냄: ${categoryLabel(category)} ${records.length()}/${categoryTotal}개")
                 }
             }
 
             output.writeUTF(TAG_DONE)
             output.flush()
-            onDone(true, "전송 완료 ($doneUnits/${totalUnits}개)")
+            onDone(true, "전송 완료 ($doneUnitsBeforeCategory/${totalUnits}개)")
         }
     }
 }

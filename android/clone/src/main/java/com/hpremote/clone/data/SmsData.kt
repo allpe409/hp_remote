@@ -17,7 +17,7 @@ object SmsExporter {
         return 0
     }
 
-    fun export(context: Context): JSONArray {
+    fun export(context: Context, onRecord: (Int, Int) -> Unit = { _, _ -> }): JSONArray {
         val result = JSONArray()
         context.contentResolver.query(
             Telephony.Sms.CONTENT_URI,
@@ -29,6 +29,7 @@ object SmsExporter {
             val dateIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
             val typeIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE)
             val readIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.READ)
+            val total = cursor.count
             while (cursor.moveToNext()) {
                 result.put(JSONObject().apply {
                     put("address", cursor.getString(addrIdx) ?: "")
@@ -37,6 +38,7 @@ object SmsExporter {
                     put("type", cursor.getInt(typeIdx))
                     put("read", cursor.getInt(readIdx))
                 })
+                onRecord(result.length(), total)
             }
         }
         return result
@@ -55,10 +57,11 @@ object SmsImporter {
         }
     }
 
-    fun import(context: Context, records: JSONArray): Int {
+    fun import(context: Context, records: JSONArray, onRecord: (Int, Int) -> Unit = { _, _ -> }): Int {
         val resolver = context.contentResolver
         var imported = 0
-        for (i in 0 until records.length()) {
+        val total = records.length()
+        for (i in 0 until total) {
             val record = records.getJSONObject(i)
             val values = ContentValues().apply {
                 put(Telephony.Sms.ADDRESS, record.optString("address"))
@@ -73,6 +76,7 @@ object SmsImporter {
             } catch (e: Exception) {
                 // Skip this one record (e.g. the default-SMS role isn't held) and keep going.
             }
+            onRecord(i + 1, total)
         }
         return imported
     }

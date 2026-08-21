@@ -96,12 +96,37 @@
             android:layout_marginTop="20dp"
             android:text="전송 시작" />
 
-        <ProgressBar
-            android:id="@+id/progress_send"
-            style="?android:attr/progressBarStyleHorizontal"
+        <TextView
+            android:id="@+id/text_category_index_send"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:text=""
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/progress_category_send"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:max="100"
+            android:progress="0" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="전체 진행률"
+            android:textSize="12sp" />
+
+        <ProgressBar
+            android:id="@+id/progress_overall_send"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
             android:max="100"
             android:progress="0" />
 

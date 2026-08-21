@@ -16,12 +16,11 @@ import java.net.Socket
 class TransferServer(
     private val context: Context,
     private val pin: String,
-    private val onProgress: (log: String, percent: Int) -> Unit,
+    private val onProgress: (TransferProgress) -> Unit,
     private val onDone: (success: Boolean, message: String) -> Unit
 ) {
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var stopping = false
-    private val log = StringBuilder()
 
     fun start() {
         stopping = false
@@ -29,7 +28,6 @@ class TransferServer(
             try {
                 val socket = ServerSocket(TRANSFER_PORT)
                 serverSocket = socket
-                progress("연결 대기 중... (${NetworkUtils.getLocalIpAddress() ?: "?"})", 0)
                 val client = socket.accept()
                 handleClient(client)
             } catch (e: Exception) {
@@ -47,9 +45,13 @@ class TransferServer(
         }
     }
 
-    private fun progress(line: String, percent: Int) {
-        log.append(line).append('\n')
-        onProgress(log.toString(), percent)
+    // APP_LIST is handled separately by the caller (display-only, no importer).
+    private fun importStructured(category: Category, records: JSONArray, onRecord: (Int, Int) -> Unit): Int = when (category) {
+        Category.CONTACTS -> ContactsImporter.import(context, records, onRecord)
+        Category.CALL_LOG -> CallLogImporter.import(context, records, onRecord)
+        Category.CALENDAR -> CalendarImporter.import(context, records, onRecord)
+        Category.SMS -> SmsImporter.import(context, records, onRecord)
+        else -> 0
     }
 
     private fun handleClient(socket: Socket) {
@@ -66,21 +68,36 @@ class TransferServer(
             output.writeUTF(TAG_OK)
 
             val manifest = JSONObject(String(input.readFrame(), Charsets.UTF_8))
-            var totalUnits = 0
-            val manifestKeys = manifest.keys()
-            while (manifestKeys.hasNext()) totalUnits += manifest.getInt(manifestKeys.next())
-            totalUnits = totalUnits.coerceAtLeast(1)
-            var doneUnits = 0
+            val orderedCategories = ArrayList<Category>()
+            val keysIterator = manifest.keys()
+            while (keysIterator.hasNext()) {
+                Category.fromTag(keysIterator.next())?.let { orderedCategories.add(it) }
+            }
+            val categoryTotalUnits = orderedCategories.associateWith { manifest.getInt(it.tag) }
+            val totalUnits = categoryTotalUnits.values.sum().coerceAtLeast(1)
 
+            var doneUnits = 0
+            var currentCategory: Category? = null
+            var currentCategoryIndex = 0
+            var currentCategoryFilesReceived = 0
             val appList = JSONArray()
+
+            fun emit(category: Category, categoryPercent: Int, message: String) {
+                val overall = (doneUnits * 100 / totalUnits).coerceIn(0, 100)
+                onProgress(TransferProgress(currentCategoryIndex, orderedCategories.size, category, categoryPercent.coerceIn(0, 100), overall, message))
+            }
 
             while (true) {
                 val tag = input.readUTF()
                 if (tag == TAG_DONE) break
-                val category = Category.fromTag(tag)
-                if (category == null) {
-                    continue
+                val category = Category.fromTag(tag) ?: continue
+
+                if (category != currentCategory) {
+                    currentCategory = category
+                    currentCategoryIndex++
+                    currentCategoryFilesReceived = 0
                 }
+                val categoryTotal = (categoryTotalUnits[category] ?: 0).coerceAtLeast(1)
 
                 if (category.isMedia) {
                     val meta = JSONObject(String(input.readFrame(), Charsets.UTF_8))
@@ -96,33 +113,29 @@ class TransferServer(
                     } else {
                         skipExactly(input, size)
                     }
+                    currentCategoryFilesReceived++
                     doneUnits++
-                    progress("받음: ${categoryLabel(category)} - $name", doneUnits * 100 / totalUnits)
+                    emit(category, currentCategoryFilesReceived * 100 / categoryTotal, "받음: ${categoryLabel(category)} - $name")
                 } else {
                     val records = JSONArray(String(input.readFrame(), Charsets.UTF_8))
-                    val imported = when (category) {
-                        Category.CONTACTS -> ContactsImporter.import(context, records)
-                        Category.CALL_LOG -> CallLogImporter.import(context, records)
-                        Category.CALENDAR -> CalendarImporter.import(context, records)
-                        Category.SMS -> SmsImporter.import(context, records)
-                        Category.APP_LIST -> {
-                            for (i in 0 until records.length()) appList.put(records.getJSONObject(i))
-                            records.length()
+                    val doneUnitsBeforeThisCategory = doneUnits
+                    val imported = if (category == Category.APP_LIST) {
+                        for (i in 0 until records.length()) appList.put(records.getJSONObject(i))
+                        records.length()
+                    } else {
+                        importStructured(category, records) { done, total ->
+                            doneUnits = doneUnitsBeforeThisCategory + done
+                            emit(category, if (total > 0) done * 100 / total else 100, "가져오는 중: ${categoryLabel(category)} ($done/$total)")
                         }
-                        else -> 0
                     }
-                    doneUnits += records.length()
-                    progress(
-                        "가져옴: ${categoryLabel(category)} $imported/${records.length()}개",
-                        doneUnits * 100 / totalUnits
-                    )
+                    doneUnits = doneUnitsBeforeThisCategory + records.length()
+                    emit(category, 100, "가져옴: ${categoryLabel(category)} $imported/${records.length()}개")
                 }
             }
 
             if (appList.length() > 0) {
-                progress("설치된 앱 ${appList.length()}개는 새 폰에서 Play 스토어로 직접 재설치해 주세요.", 100)
+                emit(currentCategory ?: Category.APP_LIST, 100, "설치된 앱 ${appList.length()}개는 새 폰에서 Play 스토어로 직접 재설치해 주세요.")
             }
-            progress("전송 완료", 100)
             onDone(true, "전송 완료")
         }
     }

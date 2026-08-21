@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.hpremote.clone.databinding.ActivityReceiveBinding
 import com.hpremote.clone.transfer.NetworkUtils
 import com.hpremote.clone.transfer.TransferServer
+import com.hpremote.clone.transfer.categoryLabel
 import kotlin.random.Random
 
 class ReceiveActivity : AppCompatActivity() {
@@ -59,10 +60,13 @@ class ReceiveActivity : AppCompatActivity() {
         server = TransferServer(
             context = applicationContext,
             pin = pin,
-            onProgress = { log, percent ->
+            onProgress = { p ->
                 runOnUiThread {
-                    binding.textStatusReceive.text = log
-                    binding.progressReceive.progress = percent
+                    binding.textCategoryIndexReceive.text =
+                        "${p.categoryIndex}/${p.totalCategories} 처리 중: ${categoryLabel(p.category)}"
+                    binding.progressCategoryReceive.progress = p.categoryPercent
+                    binding.progressOverallReceive.progress = p.overallPercent
+                    binding.textStatusReceive.text = p.message
                 }
             },
             onDone = { _, message ->

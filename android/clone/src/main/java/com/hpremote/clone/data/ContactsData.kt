@@ -17,7 +17,7 @@ object ContactsExporter {
         return 0
     }
 
-    fun export(context: Context): JSONArray {
+    fun export(context: Context, onRecord: (Int, Int) -> Unit = { _, _ -> }): JSONArray {
         val resolver = context.contentResolver
         val result = JSONArray()
         resolver.query(
@@ -27,6 +27,7 @@ object ContactsExporter {
         )?.use { cursor ->
             val idIdx = cursor.getColumnIndexOrThrow(ContactsContract.Contacts._ID)
             val nameIdx = cursor.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
+            val total = cursor.count
             while (cursor.moveToNext()) {
                 val contactId = cursor.getString(idIdx)
                 val name = cursor.getString(nameIdx) ?: ""
@@ -68,6 +69,7 @@ object ContactsExporter {
                     put("phones", phones)
                     put("emails", emails)
                 })
+                onRecord(result.length(), total)
             }
         }
         return result
@@ -76,10 +78,11 @@ object ContactsExporter {
 
 object ContactsImporter {
 
-    fun import(context: Context, records: JSONArray): Int {
+    fun import(context: Context, records: JSONArray, onRecord: (Int, Int) -> Unit = { _, _ -> }): Int {
         val resolver = context.contentResolver
         var imported = 0
-        for (i in 0 until records.length()) {
+        val total = records.length()
+        for (i in 0 until total) {
             val record = records.getJSONObject(i)
             val ops = ArrayList<ContentProviderOperation>()
 
@@ -137,6 +140,7 @@ object ContactsImporter {
             } catch (e: Exception) {
                 // Skip this one contact and keep going rather than aborting the whole import.
             }
+            onRecord(i + 1, total)
         }
         return imported
     }

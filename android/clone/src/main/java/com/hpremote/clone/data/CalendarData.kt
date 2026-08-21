@@ -16,7 +16,7 @@ object CalendarExporter {
         return 0
     }
 
-    fun export(context: Context): JSONArray {
+    fun export(context: Context, onRecord: (Int, Int) -> Unit = { _, _ -> }): JSONArray {
         val result = JSONArray()
         context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
@@ -38,19 +38,22 @@ object CalendarExporter {
             val endIdx = cursor.getColumnIndexOrThrow(CalendarContract.Events.DTEND)
             val allDayIdx = cursor.getColumnIndexOrThrow(CalendarContract.Events.ALL_DAY)
             val tzIdx = cursor.getColumnIndexOrThrow(CalendarContract.Events.EVENT_TIMEZONE)
+            val total = cursor.count
             while (cursor.moveToNext()) {
                 // DTSTART/DTEND can be null for recurring events defined only via
                 // RRULE/DURATION; skip those rather than exporting a broken event.
-                if (cursor.isNull(startIdx)) continue
-                result.put(JSONObject().apply {
-                    put("title", cursor.getString(titleIdx) ?: "")
-                    put("description", cursor.getString(descIdx) ?: "")
-                    put("location", cursor.getString(locIdx) ?: "")
-                    put("start", cursor.getLong(startIdx))
-                    put("end", if (cursor.isNull(endIdx)) cursor.getLong(startIdx) else cursor.getLong(endIdx))
-                    put("allDay", cursor.getInt(allDayIdx) != 0)
-                    put("timezone", cursor.getString(tzIdx) ?: TimeZone.getDefault().id)
-                })
+                if (!cursor.isNull(startIdx)) {
+                    result.put(JSONObject().apply {
+                        put("title", cursor.getString(titleIdx) ?: "")
+                        put("description", cursor.getString(descIdx) ?: "")
+                        put("location", cursor.getString(locIdx) ?: "")
+                        put("start", cursor.getLong(startIdx))
+                        put("end", if (cursor.isNull(endIdx)) cursor.getLong(startIdx) else cursor.getLong(endIdx))
+                        put("allDay", cursor.getInt(allDayIdx) != 0)
+                        put("timezone", cursor.getString(tzIdx) ?: TimeZone.getDefault().id)
+                    })
+                }
+                onRecord(cursor.position + 1, total)
             }
         }
         return result
@@ -94,11 +97,12 @@ object CalendarImporter {
         return uri.lastPathSegment!!.toLong()
     }
 
-    fun import(context: Context, records: JSONArray): Int {
+    fun import(context: Context, records: JSONArray, onRecord: (Int, Int) -> Unit = { _, _ -> }): Int {
         val resolver = context.contentResolver
         val calendarId = findOrCreateLocalCalendar(context)
         var imported = 0
-        for (i in 0 until records.length()) {
+        val total = records.length()
+        for (i in 0 until total) {
             val record = records.getJSONObject(i)
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, calendarId)
@@ -116,6 +120,7 @@ object CalendarImporter {
             } catch (e: Exception) {
                 // Skip this one record and keep going.
             }
+            onRecord(i + 1, total)
         }
         return imported
     }

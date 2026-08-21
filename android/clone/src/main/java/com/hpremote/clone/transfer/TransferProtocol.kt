@@ -20,11 +20,11 @@ import java.io.DataOutputStream
 const val TRANSFER_PORT = 58642
 
 enum class Category(val tag: String) {
+    APP_LIST("APP_LIST"),
     CONTACTS("CONTACTS"),
     CALL_LOG("CALL_LOG"),
     CALENDAR("CALENDAR"),
     SMS("SMS"),
-    APP_LIST("APP_LIST"),
     PHOTO("PHOTO"),
     VIDEO("VIDEO");
 
@@ -32,12 +32,26 @@ enum class Category(val tag: String) {
 
     companion object {
         fun fromTag(tag: String): Category? = values().firstOrNull { it.tag == tag }
+
+        // Fastest-first: cheap structured records before large binary media,
+        // and within structured data, roughly by per-record insert cost.
+        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, VIDEO)
     }
 }
 
 const val TAG_DONE = "DONE"
 const val TAG_OK = "OK"
 const val TAG_DENY = "DENY"
+
+/** One progress update: which category (N of total) and how far along it and the whole transfer are. */
+data class TransferProgress(
+    val categoryIndex: Int,
+    val totalCategories: Int,
+    val category: Category,
+    val categoryPercent: Int,
+    val overallPercent: Int,
+    val message: String
+)
 
 private const val MAX_FRAME_BYTES = 200 * 1024 * 1024
 
