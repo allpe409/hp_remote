@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">hp_remote 폰 복제</string>
+    <string name="send_title">데이터 보내기 (기존 폰)</string>
+    <string name="receive_title">데이터 받기 (새 폰)</string>
+</resources>
