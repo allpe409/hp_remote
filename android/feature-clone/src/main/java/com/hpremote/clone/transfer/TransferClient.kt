@@ -1,7 +1,7 @@
 package com.hpremote.clone.transfer
 
 import android.content.Context
-import android.net.Uri
+import com.hpremote.clone.data.AppEntry
 import com.hpremote.clone.data.AppListExporter
 import com.hpremote.clone.data.CalendarExporter
 import com.hpremote.clone.data.CallLogExporter
@@ -18,12 +18,14 @@ class TransferClient(
     private val connector: DuplexConnector,
     private val pin: String,
     private val categories: Set<Category>,
-    private val snsBackupTreeUri: Uri?,
+    private val selectedApps: List<AppEntry>,
+    private val customUnits: List<TransferUnit.Custom>,
     private val sortOrder: SortOrder,
     private val onProgress: (TransferProgress) -> Unit,
     private val onDone: (success: Boolean, message: String) -> Unit
 ) {
-    private val ordered = Category.ORDERED.filter { it in categories }
+    private val orderedUnits: List<TransferUnit> =
+        Category.ORDERED.filter { it in categories }.map { TransferUnit.Builtin(it) } + customUnits
 
     fun start() {
         Thread {
@@ -35,7 +37,7 @@ class TransferClient(
         }.start()
     }
 
-    // Reads a category via [export], recording nothing instead of aborting the
+    // Reads a unit via [export], recording nothing instead of aborting the
     // whole transfer if this phone denied that permission.
     private fun <T> safeExport(export: () -> T, empty: T): T {
         return try {
@@ -50,7 +52,7 @@ class TransferClient(
         Category.CALL_LOG -> CallLogExporter.export(context, onRecord)
         Category.CALENDAR -> CalendarExporter.export(context, onRecord)
         Category.SMS -> SmsExporter.export(context, onRecord)
-        Category.APP_LIST -> AppListExporter.export(context, onRecord)
+        Category.APP_LIST -> AppListExporter.exportSelected(selectedApps, onRecord)
         else -> JSONArray()
     }
 
@@ -67,35 +69,44 @@ class TransferClient(
             }
 
             // A quick count/size pass (no JSON build, no file bytes read) just to size the manifest.
-            val estimates = ordered.associateWith { safeExport({ TimeEstimate.estimate(context, it, snsBackupTreeUri) }, CategoryEstimate(it, 0, 0L, 0L)) }
+            val estimates = orderedUnits.associateWith {
+                safeExport({ TimeEstimate.estimate(context, it, sortOrder, selectedApps.size) }, UnitEstimate(it, 0, 0L, 0L))
+            }
 
             val manifest = JSONObject()
-            ordered.forEach { manifest.put(it.tag, estimates.getValue(it).count) }
+            val unitsArray = JSONArray()
+            orderedUnits.forEach {
+                unitsArray.put(JSONObject().apply {
+                    put("tag", it.tag)
+                    put("label", it.label)
+                    put("count", estimates.getValue(it).count)
+                })
+            }
+            manifest.put("units", unitsArray)
             output.writeFrame(manifest.toString().toByteArray(Charsets.UTF_8))
 
-            val totalUnits = ordered.sumOf { estimates.getValue(it).count }.coerceAtLeast(1)
-            var doneUnitsBeforeCategory = 0
+            val totalUnits = orderedUnits.sumOf { estimates.getValue(it).count }.coerceAtLeast(1)
+            var doneUnitsBeforeUnit = 0
 
-            for ((index, category) in ordered.withIndex()) {
-                val categoryIndex = index + 1
-                val categoryTotal = estimates.getValue(category).count.coerceAtLeast(1)
+            for ((index, unit) in orderedUnits.withIndex()) {
+                val unitIndex = index + 1
+                val unitTotal = estimates.getValue(unit).count.coerceAtLeast(1)
 
-                fun emit(categoryPercent: Int, withinCategoryUnits: Int, message: String) {
-                    val overall = ((doneUnitsBeforeCategory + withinCategoryUnits) * 100 / totalUnits).coerceIn(0, 100)
-                    onProgress(TransferProgress(categoryIndex, ordered.size, category, categoryPercent.coerceIn(0, 100), overall, message))
+                fun emit(unitPercent: Int, withinUnitCount: Int, message: String) {
+                    val overall = ((doneUnitsBeforeUnit + withinUnitCount) * 100 / totalUnits).coerceIn(0, 100)
+                    onProgress(TransferProgress(unitIndex, orderedUnits.size, unit.label, unitPercent.coerceIn(0, 100), overall, message))
                 }
 
-                if (category.isFileBased) {
-                    val files = safeExport({
-                        if (category == Category.SNS_BACKUP) {
-                            snsBackupTreeUri?.let { SnsBackupExporter.list(context, it, sortOrder) } ?: emptyList()
-                        } else {
-                            MediaExporter.list(context, category, sortOrder)
-                        }
-                    }, emptyList<MediaFile>())
+                val files: List<MediaFile>? = when {
+                    unit is TransferUnit.Custom -> safeExport({ SnsBackupExporter.list(context, unit.treeUri, sortOrder) }, emptyList())
+                    unit is TransferUnit.Builtin && unit.category.isFileBased -> safeExport({ MediaExporter.list(context, unit.category, sortOrder) }, emptyList())
+                    else -> null
+                }
+
+                if (files != null) {
                     val total = files.size.coerceAtLeast(1)
                     files.forEachIndexed { fi, file ->
-                        output.writeUTF(category.tag)
+                        output.writeUTF(unit.tag)
                         val meta = JSONObject().apply {
                             put("name", file.displayName)
                             put("mime", file.mimeType)
@@ -106,25 +117,26 @@ class TransferClient(
                             copyExactly(ins, output, file.size)
                         }
                         output.flush()
-                        emit((fi + 1) * 100 / total, fi + 1, "보냄: ${categoryLabel(category)} - ${file.displayName}")
+                        emit((fi + 1) * 100 / total, fi + 1, "보냄: ${unit.label} - ${file.displayName}")
                     }
-                    doneUnitsBeforeCategory += files.size
+                    doneUnitsBeforeUnit += files.size
                 } else {
+                    val category = (unit as TransferUnit.Builtin).category
                     val records = safeExport({
                         exportStructured(category) { done, total ->
-                            emit(if (total > 0) done * 100 / total else 100, done, "내보내는 중: ${categoryLabel(category)} ($done/$total)")
+                            emit(if (total > 0) done * 100 / total else 100, done, "내보내는 중: ${unit.label} ($done/$total)")
                         }
                     }, JSONArray())
-                    output.writeUTF(category.tag)
+                    output.writeUTF(unit.tag)
                     output.writeFrame(records.toString().toByteArray(Charsets.UTF_8))
-                    doneUnitsBeforeCategory += records.length()
-                    emit(100, records.length(), "보냄: ${categoryLabel(category)} ${records.length()}/${categoryTotal}개")
+                    doneUnitsBeforeUnit += records.length()
+                    emit(100, records.length(), "보냄: ${unit.label} ${records.length()}/${unitTotal}개")
                 }
             }
 
             output.writeUTF(TAG_DONE)
             output.flush()
-            onDone(true, "전송 완료 ($doneUnitsBeforeCategory/${totalUnits}개)")
+            onDone(true, "전송 완료 ($doneUnitsBeforeUnit/${totalUnits}개)")
         }
     }
 }

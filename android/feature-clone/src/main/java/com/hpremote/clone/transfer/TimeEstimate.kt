@@ -1,8 +1,6 @@
 package com.hpremote.clone.transfer
 
 import android.content.Context
-import android.net.Uri
-import com.hpremote.clone.data.AppListExporter
 import com.hpremote.clone.data.CalendarExporter
 import com.hpremote.clone.data.CallLogExporter
 import com.hpremote.clone.data.ContactsExporter
@@ -10,9 +8,9 @@ import com.hpremote.clone.data.MediaExporter
 import com.hpremote.clone.data.SmsExporter
 import com.hpremote.clone.data.SnsBackupExporter
 
-/** One category's size (record count, and total bytes for media) and rough time estimate. */
-data class CategoryEstimate(
-    val category: Category,
+/** One unit's size (record count, and total bytes for file-based units) and rough time estimate. */
+data class UnitEstimate(
+    val unit: TransferUnit,
     val count: Int,
     val totalBytes: Long,
     val estimatedMs: Long
@@ -29,31 +27,32 @@ private const val MEDIA_BYTES_PER_MS = 8L * 1024 * 1024 / 1000 // 8 MB/s
 object TimeEstimate {
 
     /**
-     * Queries just what's needed to size up [category] - counts for structured data, sizes
-     * for file-based categories. [snsBackupTreeUri] is the user-picked folder for SNS_BACKUP;
-     * with none picked yet it sizes as empty (the UI tells the user to pick a folder first).
+     * Queries just what's needed to size up [unit] - counts for structured data, sizes
+     * for file-based units. [selectedAppCount] is the number of apps checked in "앱목록"
+     * (APP_LIST just lists whichever apps the user picked, no query needed for that count).
      */
-    fun estimate(context: Context, category: Category, snsBackupTreeUri: Uri? = null): CategoryEstimate {
-        if (category == Category.SNS_BACKUP) {
-            val files = snsBackupTreeUri?.let { SnsBackupExporter.list(context, it) } ?: emptyList()
+    fun estimate(context: Context, unit: TransferUnit, sortOrder: SortOrder = SortOrder.NEWEST_FIRST, selectedAppCount: Int = 0): UnitEstimate {
+        if (unit is TransferUnit.Custom) {
+            val files = SnsBackupExporter.list(context, unit.treeUri, sortOrder)
             val totalBytes = files.sumOf { it.size }
-            return CategoryEstimate(category, files.size, totalBytes, totalBytes / MEDIA_BYTES_PER_MS)
+            return UnitEstimate(unit, files.size, totalBytes, totalBytes / MEDIA_BYTES_PER_MS)
         }
+        val category = (unit as TransferUnit.Builtin).category
         if (category.isFileBased) {
             val files = MediaExporter.list(context, category)
             val totalBytes = files.sumOf { it.size }
-            return CategoryEstimate(category, files.size, totalBytes, totalBytes / MEDIA_BYTES_PER_MS)
+            return UnitEstimate(unit, files.size, totalBytes, totalBytes / MEDIA_BYTES_PER_MS)
         }
         val count = when (category) {
             Category.CONTACTS -> ContactsExporter.count(context)
             Category.CALL_LOG -> CallLogExporter.count(context)
             Category.CALENDAR -> CalendarExporter.count(context)
             Category.SMS -> SmsExporter.count(context)
-            Category.APP_LIST -> AppListExporter.count(context)
+            Category.APP_LIST -> selectedAppCount
             else -> 0
         }
         val msPerRecord = if (category == Category.CONTACTS) MS_PER_CONTACT else MS_PER_SIMPLE_RECORD
-        return CategoryEstimate(category, count, 0L, count.toLong() * msPerRecord)
+        return UnitEstimate(unit, count, 0L, count.toLong() * msPerRecord)
     }
 
     fun formatDuration(ms: Long): String {

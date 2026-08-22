@@ -1,5 +1,6 @@
 package com.hpremote.clone.transfer
 
+import android.net.Uri
 import java.io.DataInputStream
 import java.io.DataOutputStream
 
@@ -8,13 +9,16 @@ import java.io.DataOutputStream
  *
  *   client -> writeUTF(pin)
  *   server -> writeUTF("OK" | "DENY")          (closes the socket on DENY)
- *   client -> writeFrame(manifestJsonBytes)     one JSON object: {"CATEGORY": count, ...}
- *   client -> repeated items, each starting with writeUTF(categoryTag):
+ *   client -> writeFrame(manifestJsonBytes)     {"units":[{"tag":..,"label":..,"count":..}, ...]}
+ *                                                one entry per TransferUnit, in send order
+ *   client -> repeated items, each starting with writeUTF(unitTag):
  *               structured (CONTACTS/CALL_LOG/CALENDAR/SMS/APP_LIST):
  *                 writeFrame(jsonArrayBytes)    every record of that category, once
- *               media (PHOTO/VIDEO):
+ *               file-based (PHOTO/MUSIC/AUDIO/VIDEO, or a custom user-picked folder):
  *                 writeFrame(metadataJsonBytes) {"name":..,"mime":..,"size":..}
  *                 <raw file bytes, exactly `size` of them, written directly>
+ *               (a custom unit's tag won't resolve via Category.fromTag - that's how the
+ *               receiver tells "unknown tag" apart from "a fixed category")
  *   client -> writeUTF("DONE")                  ends the session
  */
 const val TRANSFER_PORT = 58642
@@ -43,32 +47,46 @@ enum class Category(val tag: String) {
     CALENDAR("CALENDAR"),
     SMS("SMS"),
     PHOTO("PHOTO"),
+    MUSIC("MUSIC"),
     AUDIO("AUDIO"),
-    VIDEO("VIDEO"),
-    SNS_BACKUP("SNS_BACKUP");
+    VIDEO("VIDEO");
 
     // True for categories carried as raw files (metadata frame + exact-size byte copy)
     // rather than a single JSON array of structured records.
-    val isFileBased: Boolean get() = this == PHOTO || this == AUDIO || this == VIDEO || this == SNS_BACKUP
+    val isFileBased: Boolean get() = this == PHOTO || this == MUSIC || this == AUDIO || this == VIDEO
 
     companion object {
         fun fromTag(tag: String): Category? = values().firstOrNull { it.tag == tag }
 
-        // Fastest-first: cheap structured records before large binary media. SNS_BACKUP
-        // goes last - it's an arbitrary user-picked folder, so it's the least predictable.
-        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, AUDIO, VIDEO, SNS_BACKUP)
+        // Fastest-first: cheap structured records before large binary media.
+        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, MUSIC, AUDIO, VIDEO)
     }
+}
+
+// The processing/progress unit shown in "N/total" - either one of the fixed Category
+// types above, or a user-picked folder (선택한 압축 파일/다운로드 폴더/설치 파일/기타
+// 폴더 등) that isn't known ahead of time and so can't live in the Category enum.
+sealed class TransferUnit {
+    abstract val tag: String
+    abstract val label: String
+
+    data class Builtin(val category: Category) : TransferUnit() {
+        override val tag get() = category.tag
+        override val label get() = categoryLabel(category)
+    }
+
+    data class Custom(override val tag: String, override val label: String, val treeUri: Uri) : TransferUnit()
 }
 
 const val TAG_DONE = "DONE"
 const val TAG_OK = "OK"
 const val TAG_DENY = "DENY"
 
-/** One progress update: which category (N of total) and how far along it and the whole transfer are. */
+/** One progress update: which unit (N of total) and how far along it and the whole transfer are. */
 data class TransferProgress(
     val categoryIndex: Int,
     val totalCategories: Int,
-    val category: Category,
+    val label: String,
     val categoryPercent: Int,
     val overallPercent: Int,
     val message: String

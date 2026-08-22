@@ -12,7 +12,6 @@ import com.hpremote.clone.transfer.LocalServerAcceptor
 import com.hpremote.clone.transfer.NetworkUtils
 import com.hpremote.clone.transfer.TRANSFER_PORT
 import com.hpremote.clone.transfer.TransferServer
-import com.hpremote.clone.transfer.categoryLabel
 import com.hpremote.clone.transfer.relay.RelayServerAcceptor
 import com.hpremote.clone.wifidirect.WifiDirectHelper
 import kotlin.random.Random
@@ -130,7 +129,7 @@ class ReceiveActivity : AppCompatActivity() {
             onProgress = { p ->
                 runOnUiThread {
                     binding.textCategoryIndexReceive.text =
-                        "${p.categoryIndex}/${p.totalCategories} 처리 중: ${categoryLabel(p.category)}"
+                        "${p.categoryIndex}/${p.totalCategories} 처리 중: ${p.label}"
                     binding.progressCategoryReceive.progress = p.categoryPercent
                     binding.progressOverallReceive.progress = p.overallPercent
                     binding.textStatusReceive.text = p.message

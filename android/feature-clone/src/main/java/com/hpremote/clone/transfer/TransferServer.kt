@@ -10,6 +10,8 @@ import com.hpremote.clone.data.SnsBackupImporter
 import org.json.JSONArray
 import org.json.JSONObject
 
+private data class UnitInfo(val tag: String, val label: String, val count: Int)
+
 class TransferServer(
     private val context: Context,
     private val pin: String,
@@ -59,45 +61,46 @@ class TransferServer(
             output.writeUTF(TAG_OK)
 
             val manifest = JSONObject(String(input.readFrame(), Charsets.UTF_8))
-            val orderedCategories = ArrayList<Category>()
-            val keysIterator = manifest.keys()
-            while (keysIterator.hasNext()) {
-                Category.fromTag(keysIterator.next())?.let { orderedCategories.add(it) }
+            val unitsJson = manifest.getJSONArray("units")
+            val orderedUnits = (0 until unitsJson.length()).map {
+                val u = unitsJson.getJSONObject(it)
+                UnitInfo(u.getString("tag"), u.getString("label"), u.getInt("count"))
             }
-            val categoryTotalUnits = orderedCategories.associateWith { manifest.getInt(it.tag) }
-            val totalUnits = categoryTotalUnits.values.sum().coerceAtLeast(1)
+            val unitByTag = orderedUnits.associateBy { it.tag }
+            val totalUnits = orderedUnits.sumOf { it.count }.coerceAtLeast(1)
 
             var doneUnits = 0
-            var currentCategory: Category? = null
-            var currentCategoryIndex = 0
-            var currentCategoryFilesReceived = 0
-            var receivedSnsBackup = false
+            var currentTag: String? = null
+            var currentUnitIndex = 0
+            var currentUnitFilesReceived = 0
+            var receivedCustomFile = false
             val appList = JSONArray()
 
-            fun emit(category: Category, categoryPercent: Int, message: String) {
+            fun emit(label: String, unitPercent: Int, message: String) {
                 val overall = (doneUnits * 100 / totalUnits).coerceIn(0, 100)
-                onProgress(TransferProgress(currentCategoryIndex, orderedCategories.size, category, categoryPercent.coerceIn(0, 100), overall, message))
+                onProgress(TransferProgress(currentUnitIndex, orderedUnits.size, label, unitPercent.coerceIn(0, 100), overall, message))
             }
 
             while (true) {
                 val tag = input.readUTF()
                 if (tag == TAG_DONE) break
-                val category = Category.fromTag(tag) ?: continue
+                val info = unitByTag[tag] ?: continue
+                val category = Category.fromTag(tag)
 
-                if (category != currentCategory) {
-                    currentCategory = category
-                    currentCategoryIndex++
-                    currentCategoryFilesReceived = 0
+                if (tag != currentTag) {
+                    currentTag = tag
+                    currentUnitIndex++
+                    currentUnitFilesReceived = 0
                 }
-                val categoryTotal = (categoryTotalUnits[category] ?: 0).coerceAtLeast(1)
+                val unitTotal = info.count.coerceAtLeast(1)
 
-                if (category.isFileBased) {
+                if (category == null || category.isFileBased) {
                     val meta = JSONObject(String(input.readFrame(), Charsets.UTF_8))
                     val name = meta.getString("name")
                     val mime = meta.getString("mime")
                     val size = meta.getLong("size")
-                    val uri = if (category == Category.SNS_BACKUP) {
-                        SnsBackupImporter.begin(context, name, mime)
+                    val uri = if (category == null) {
+                        SnsBackupImporter.begin(context, info.label, name, mime)
                     } else {
                         MediaImporter.begin(context, category, name, mime)
                     }
@@ -105,36 +108,36 @@ class TransferServer(
                         context.contentResolver.openOutputStream(uri)?.use { out ->
                             copyExactly(input, out, size)
                         }
-                        if (category == Category.SNS_BACKUP) SnsBackupImporter.finish(context, uri) else MediaImporter.finish(context, uri)
+                        if (category == null) SnsBackupImporter.finish(context, uri) else MediaImporter.finish(context, uri)
                     } else {
                         skipExactly(input, size)
                     }
-                    currentCategoryFilesReceived++
+                    currentUnitFilesReceived++
                     doneUnits++
-                    if (category == Category.SNS_BACKUP) receivedSnsBackup = true
-                    emit(category, currentCategoryFilesReceived * 100 / categoryTotal, "받음: ${categoryLabel(category)} - $name")
+                    if (category == null) receivedCustomFile = true
+                    emit(info.label, currentUnitFilesReceived * 100 / unitTotal, "받음: ${info.label} - $name")
                 } else {
                     val records = JSONArray(String(input.readFrame(), Charsets.UTF_8))
-                    val doneUnitsBeforeThisCategory = doneUnits
+                    val doneUnitsBeforeThisUnit = doneUnits
                     val imported = if (category == Category.APP_LIST) {
                         for (i in 0 until records.length()) appList.put(records.getJSONObject(i))
                         records.length()
                     } else {
                         importStructured(category, records) { done, total ->
-                            doneUnits = doneUnitsBeforeThisCategory + done
-                            emit(category, if (total > 0) done * 100 / total else 100, "가져오는 중: ${categoryLabel(category)} ($done/$total)")
+                            doneUnits = doneUnitsBeforeThisUnit + done
+                            emit(info.label, if (total > 0) done * 100 / total else 100, "가져오는 중: ${info.label} ($done/$total)")
                         }
                     }
-                    doneUnits = doneUnitsBeforeThisCategory + records.length()
-                    emit(category, 100, "가져옴: ${categoryLabel(category)} $imported/${records.length()}개")
+                    doneUnits = doneUnitsBeforeThisUnit + records.length()
+                    emit(info.label, 100, "가져옴: ${info.label} $imported/${records.length()}개")
                 }
             }
 
             if (appList.length() > 0) {
-                emit(currentCategory ?: Category.APP_LIST, 100, "설치된 앱 ${appList.length()}개는 새 폰에서 Play 스토어로 직접 재설치해 주세요.")
+                emit(currentTag?.let { unitByTag[it]?.label } ?: "설치된 앱 목록", 100, "설치된 앱 ${appList.length()}개는 새 폰에서 Play 스토어로 직접 재설치해 주세요.")
             }
-            if (receivedSnsBackup) {
-                emit(currentCategory ?: Category.SNS_BACKUP, 100, "SNS 백업 파일은 다운로드 폴더의 hp_control_clone/sns_backup에 저장됐습니다. 카카오톡/라인 등에서 '대화 복원·가져오기'로 이 폴더의 파일을 선택해 복원해 주세요.")
+            if (receivedCustomFile) {
+                emit(currentTag?.let { unitByTag[it]?.label } ?: "사용자 지정 파일", 100, "받은 파일은 다운로드 폴더의 hp_control_clone/custom/<항목명>에 저장됐습니다.")
             }
             onDone(true, "전송 완료")
         }

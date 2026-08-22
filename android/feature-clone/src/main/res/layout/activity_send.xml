@@ -164,85 +164,252 @@
             android:text="보낼 데이터 선택"
             android:textSize="14sp" />
 
-        <CheckBox
-            android:id="@+id/cb_contacts"
+        <!-- 앱목록: 정보성 목록뿐 - 새 폰에서 Play스토어로 재설치하라는 안내용, 실제 파일 복사 없음 -->
+        <LinearLayout
+            android:id="@+id/header_apps_send"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="연락처" />
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <CheckBox
-            android:id="@+id/cb_call_log"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="통화 기록" />
+            <CheckBox
+                android:id="@+id/cb_apps_select_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="앱목록"
+                android:textStyle="bold" />
 
-        <CheckBox
-            android:id="@+id/cb_calendar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="캘린더" />
+            <TextView
+                android:id="@+id/text_apps_summary_send"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="불러오는 중..."
+                android:textSize="12sp" />
 
-        <CheckBox
-            android:id="@+id/cb_sms"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="문자 메시지" />
+        </LinearLayout>
 
-        <CheckBox
-            android:id="@+id/cb_media"
+        <ListView
+            android:id="@+id/list_apps_send"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="사진 / 동영상" />
+            android:layout_height="200dp"
+            android:layout_marginTop="4dp"
+            android:choiceMode="multipleChoice" />
 
-        <CheckBox
-            android:id="@+id/cb_audio"
+        <View
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="음성 파일" />
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="#33000000" />
 
-        <CheckBox
-            android:id="@+id/cb_apps"
+        <!-- 파일분류: 연락처~동영상 8종은 건수/용량을 바로 조회해 오름차순 정렬, 압축파일~기타 4종은 폴더 지정 방식 -->
+        <LinearLayout
+            android:id="@+id/header_files_send"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="설치된 앱 목록" />
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <CheckBox
-            android:id="@+id/cb_sns_backup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="false"
-            android:text="SNS 백업 파일 (카카오톡 · 라인 등)" />
+            <CheckBox
+                android:id="@+id/cb_files_select_all"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="파일분류"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/text_files_summary_send"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="0개 선택됨"
+                android:textSize="12sp" />
+
+        </LinearLayout>
 
         <LinearLayout
-            android:id="@+id/layout_sns_backup_send"
+            android:id="@+id/layout_known_file_categories_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical">
+
+            <CheckBox
+                android:id="@+id/cb_contacts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="연락처" />
+
+            <CheckBox
+                android:id="@+id/cb_call_log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="통화 기록" />
+
+            <CheckBox
+                android:id="@+id/cb_calendar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="캘린더" />
+
+            <CheckBox
+                android:id="@+id/cb_sms"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="문자 메시지" />
+
+            <CheckBox
+                android:id="@+id/cb_photo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="사진" />
+
+            <CheckBox
+                android:id="@+id/cb_music"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="음악" />
+
+            <CheckBox
+                android:id="@+id/cb_audio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="음성 파일" />
+
+            <CheckBox
+                android:id="@+id/cb_video"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="동영상" />
+
+        </LinearLayout>
+
+        <!-- 압축 파일 -->
+        <CheckBox
+            android:id="@+id/cb_archive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="압축 파일" />
+
+        <LinearLayout
+            android:id="@+id/layout_archive_send"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="32dp"
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="먼저 카카오톡·라인 등 앱의 '대화 백업/내보내기' 기능으로 백업 파일을 만든 뒤, 그 파일이 저장된 폴더를 선택하세요"
-                android:textSize="12sp" />
-
             <Button
-                android:id="@+id/btn_pick_sns_folder"
+                android:id="@+id/btn_pick_archive_folder"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
                 android:text="폴더 선택" />
 
             <TextView
-                android:id="@+id/text_sns_folder_send"
+                android:id="@+id/text_archive_folder_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="선택된 폴더 없음"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- 다운로드 폴더 -->
+        <CheckBox
+            android:id="@+id/cb_downloads"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="다운로드 폴더" />
+
+        <LinearLayout
+            android:id="@+id/layout_downloads_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btn_pick_downloads_folder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="폴더 선택" />
+
+            <TextView
+                android:id="@+id/text_downloads_folder_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="선택된 폴더 없음"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- 설치 파일 (APK) -->
+        <CheckBox
+            android:id="@+id/cb_installer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="설치 파일 (APK)" />
+
+        <LinearLayout
+            android:id="@+id/layout_installer_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btn_pick_installer_folder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="폴더 선택" />
+
+            <TextView
+                android:id="@+id/text_installer_folder_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="선택된 폴더 없음"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- 기타 -->
+        <CheckBox
+            android:id="@+id/cb_other"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="기타" />
+
+        <LinearLayout
+            android:id="@+id/layout_other_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btn_pick_other_folder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="폴더 선택" />
+
+            <TextView
+                android:id="@+id/text_other_folder_send"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
@@ -255,7 +422,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="사진 · 동영상 · 음성 · SNS 백업 정렬"
+            android:text="사진 · 음악 · 음성 · 동영상 · 폴더지정 항목 정렬"
             android:textSize="14sp" />
 
         <TextView

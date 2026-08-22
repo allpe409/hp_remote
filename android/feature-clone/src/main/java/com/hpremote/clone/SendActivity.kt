@@ -5,9 +5,17 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.hpremote.clone.data.AppEntry
+import com.hpremote.clone.data.AppListExporter
+import com.hpremote.clone.data.CalendarExporter
+import com.hpremote.clone.data.CallLogExporter
+import com.hpremote.clone.data.ContactsExporter
+import com.hpremote.clone.data.MediaExporter
+import com.hpremote.clone.data.SmsExporter
 import com.hpremote.clone.databinding.ActivitySendBinding
 import com.hpremote.clone.transfer.Category
 import com.hpremote.clone.transfer.ConnectionMethod
@@ -18,10 +26,12 @@ import com.hpremote.clone.transfer.SortOrder
 import com.hpremote.clone.transfer.TRANSFER_PORT
 import com.hpremote.clone.transfer.TimeEstimate
 import com.hpremote.clone.transfer.TransferClient
-import com.hpremote.clone.transfer.categoryLabel
+import com.hpremote.clone.transfer.TransferUnit
 import com.hpremote.clone.transfer.relay.RelayConnector
 import com.hpremote.clone.wifidirect.WifiDirectHelper
 import com.hpremote.clone.wifidirect.WifiDirectPeer
+
+private data class KnownCategoryInfo(val category: Category, val checkbox: CheckBox, val label: String, val count: Int, val totalBytes: Long)
 
 class SendActivity : AppCompatActivity() {
 
@@ -30,21 +40,17 @@ class SendActivity : AppCompatActivity() {
     private val wifiDirect by lazy { WifiDirectHelper(this) }
     private var discoveredPeers: List<WifiDirectPeer> = emptyList()
     private var wifiDirectHost: String? = null
-    private var snsBackupTreeUri: Uri? = null
+
+    private var installedApps: List<AppEntry> = emptyList()
+    private var knownCategoryInfos: List<KnownCategoryInfo> = emptyList()
+
+    private var archiveTreeUri: Uri? = null
+    private var downloadsTreeUri: Uri? = null
+    private var installerTreeUri: Uri? = null
+    private var otherTreeUri: Uri? = null
 
     private val sendPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { showEstimateThenStart() }
-
-    private val snsFolderPicker =
-        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) {
-                contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-                snsBackupTreeUri = uri
-                binding.textSnsFolderSend.text = uri.lastPathSegment ?: uri.toString()
-            }
-        }
 
     private val wifiDirectPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -52,6 +58,31 @@ class SendActivity : AppCompatActivity() {
             binding.textWifiDirectStatusSend.text = "검색 중..."
             wifiDirect.discoverPeers()
         }
+
+    private fun folderPickerLauncher(assign: (Uri) -> Unit) =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                assign(uri)
+            }
+        }
+
+    private val archiveFolderPicker = folderPickerLauncher {
+        archiveTreeUri = it
+        binding.textArchiveFolderSend.text = it.lastPathSegment ?: it.toString()
+    }
+    private val downloadsFolderPicker = folderPickerLauncher {
+        downloadsTreeUri = it
+        binding.textDownloadsFolderSend.text = it.lastPathSegment ?: it.toString()
+    }
+    private val installerFolderPicker = folderPickerLauncher {
+        installerTreeUri = it
+        binding.textInstallerFolderSend.text = it.lastPathSegment ?: it.toString()
+    }
+    private val otherFolderPicker = folderPickerLauncher {
+        otherTreeUri = it
+        binding.textOtherFolderSend.text = it.lastPathSegment ?: it.toString()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,13 +122,6 @@ class SendActivity : AppCompatActivity() {
             wifiDirectPermissionLauncher.launch(PermissionsHelper.wifiDirectPermissions())
         }
 
-        binding.cbSnsBackup.setOnCheckedChangeListener { _, checked ->
-            binding.layoutSnsBackupSend.visibility = if (checked) View.VISIBLE else View.GONE
-        }
-        binding.btnPickSnsFolder.setOnClickListener {
-            snsFolderPicker.launch(null)
-        }
-
         binding.radioMethodSend.setOnCheckedChangeListener { _, checkedId ->
             selectedMethod = when (checkedId) {
                 binding.radioWifiDirectSend.id -> ConnectionMethod.WIFI_DIRECT
@@ -113,6 +137,9 @@ class SendActivity : AppCompatActivity() {
                 binding.textLocalHintSend.text = "두 폰이 같은 공유기 Wi-Fi에 연결되어 있어야 합니다"
             }
         }
+
+        setUpAppsSection()
+        setUpFilesSection()
 
         binding.btnConnectSend.setOnClickListener {
             val pin = binding.editPin.text.toString().trim()
@@ -132,12 +159,12 @@ class SendActivity : AppCompatActivity() {
                 binding.textStatusSend.text = "릴레이 서버 주소를 입력하세요"
                 return@setOnClickListener
             }
-            if (selectedCategories().isEmpty()) {
+            if (selectedCategories().isEmpty() && customUnits().isEmpty()) {
                 binding.textStatusSend.text = "보낼 데이터를 하나 이상 선택하세요"
                 return@setOnClickListener
             }
-            if (binding.cbSnsBackup.isChecked && snsBackupTreeUri == null) {
-                binding.textStatusSend.text = "SNS 백업 파일이 저장된 폴더를 먼저 선택하세요"
+            missingFolderLabel()?.let {
+                binding.textStatusSend.text = "'$it' 폴더를 먼저 선택하세요"
                 return@setOnClickListener
             }
             binding.btnConnectSend.isEnabled = false
@@ -149,19 +176,140 @@ class SendActivity : AppCompatActivity() {
         }
     }
 
+    // "앱목록" - 정보성 목록뿐(각 앱 백업 방식이 다 다르고 위험해서 실제 데이터 복사는 안 함),
+    // 체크한 앱들만 이름을 모아 새 폰에서 Play스토어로 재설치하라고 안내하는 용도.
+    private fun setUpAppsSection() {
+        binding.cbAppsSelectAll.setOnCheckedChangeListener { _, checked ->
+            for (i in 0 until binding.listAppsSend.count) {
+                binding.listAppsSend.setItemChecked(i, checked)
+            }
+        }
+        Thread {
+            val apps = AppListExporter.installedApps(applicationContext)
+            runOnUiThread {
+                installedApps = apps
+                binding.listAppsSend.adapter = ArrayAdapter(
+                    this, android.R.layout.simple_list_item_multiple_choice,
+                    apps.map { "${it.label} (${formatBytes(it.apkSizeBytes)})" }
+                )
+                binding.textAppsSummarySend.text = "${apps.size}개 설치됨 (${formatBytes(apps.sumOf { it.apkSizeBytes })})"
+            }
+        }.start()
+    }
+
+    private fun selectedApps(): List<AppEntry> {
+        val checked = binding.listAppsSend.checkedItemPositions
+        val result = mutableListOf<AppEntry>()
+        for (i in 0 until checked.size()) {
+            if (checked.valueAt(i)) installedApps.getOrNull(checked.keyAt(i))?.let { result.add(it) }
+        }
+        return result
+    }
+
+    // "파일분류" - 연락처~동영상 8종(건수/용량 조회 후 오름차순 재배치)과
+    // 압축 파일/다운로드 폴더/설치 파일/기타 4종(폴더 지정 방식)
+    private fun setUpFilesSection() {
+        binding.cbFilesSelectAll.setOnCheckedChangeListener { _, checked ->
+            listOf(
+                binding.cbContacts, binding.cbCallLog, binding.cbCalendar, binding.cbSms,
+                binding.cbPhoto, binding.cbMusic, binding.cbAudio, binding.cbVideo,
+                binding.cbArchive, binding.cbDownloads, binding.cbInstaller, binding.cbOther
+            ).forEach { it.isChecked = checked }
+        }
+
+        val knownCheckboxes = listOf(
+            binding.cbContacts, binding.cbCallLog, binding.cbCalendar, binding.cbSms,
+            binding.cbPhoto, binding.cbMusic, binding.cbAudio, binding.cbVideo
+        )
+        knownCheckboxes.forEach { it.setOnCheckedChangeListener { _, _ -> updateFilesSummary() } }
+
+        setUpFolderItem(binding.cbArchive, binding.layoutArchiveSend, binding.btnPickArchiveFolder, archiveFolderPicker)
+        setUpFolderItem(binding.cbDownloads, binding.layoutDownloadsSend, binding.btnPickDownloadsFolder, downloadsFolderPicker)
+        setUpFolderItem(binding.cbInstaller, binding.layoutInstallerSend, binding.btnPickInstallerFolder, installerFolderPicker)
+        setUpFolderItem(binding.cbOther, binding.layoutOtherSend, binding.btnPickOtherFolder, otherFolderPicker)
+
+        Thread {
+            val contactsCount = ContactsExporter.count(applicationContext)
+            val callLogCount = CallLogExporter.count(applicationContext)
+            val calendarCount = CalendarExporter.count(applicationContext)
+            val smsCount = SmsExporter.count(applicationContext)
+            val photos = MediaExporter.list(applicationContext, Category.PHOTO)
+            val music = MediaExporter.list(applicationContext, Category.MUSIC)
+            val audio = MediaExporter.list(applicationContext, Category.AUDIO)
+            val videos = MediaExporter.list(applicationContext, Category.VIDEO)
+            runOnUiThread {
+                val infos = listOf(
+                    KnownCategoryInfo(Category.CONTACTS, binding.cbContacts, "연락처", contactsCount, 0L),
+                    KnownCategoryInfo(Category.CALL_LOG, binding.cbCallLog, "통화 기록", callLogCount, 0L),
+                    KnownCategoryInfo(Category.CALENDAR, binding.cbCalendar, "캘린더", calendarCount, 0L),
+                    KnownCategoryInfo(Category.SMS, binding.cbSms, "문자 메시지", smsCount, 0L),
+                    KnownCategoryInfo(Category.PHOTO, binding.cbPhoto, "사진", photos.size, photos.sumOf { it.size }),
+                    KnownCategoryInfo(Category.MUSIC, binding.cbMusic, "음악", music.size, music.sumOf { it.size }),
+                    KnownCategoryInfo(Category.AUDIO, binding.cbAudio, "음성 파일", audio.size, audio.sumOf { it.size }),
+                    KnownCategoryInfo(Category.VIDEO, binding.cbVideo, "동영상", videos.size, videos.sumOf { it.size })
+                )
+                infos.forEach { info ->
+                    info.checkbox.text = if (info.category.isFileBased) {
+                        "${info.label} (${info.count}개, ${formatBytes(info.totalBytes)})"
+                    } else {
+                        "${info.label} (${info.count}개)"
+                    }
+                }
+                knownCategoryInfos = infos
+                // 구조화 4종은 건수 기준, 미디어 4종은 용량 기준으로 각각 오름차순 - 서로 다른 단위라 통째로
+                // 섞어 정렬하지 않고, 원래의 "구조화 -> 미디어" 순서 안에서만 재배치.
+                val sorted = infos.filter { !it.category.isFileBased }.sortedBy { it.count } +
+                    infos.filter { it.category.isFileBased }.sortedBy { it.totalBytes }
+                binding.layoutKnownFileCategoriesSend.removeAllViews()
+                sorted.forEach { binding.layoutKnownFileCategoriesSend.addView(it.checkbox) }
+                updateFilesSummary()
+            }
+        }.start()
+    }
+
+    private fun setUpFolderItem(checkbox: CheckBox, layout: View, button: View, picker: androidx.activity.result.ActivityResultLauncher<Uri?>) {
+        checkbox.setOnCheckedChangeListener { _, checked ->
+            layout.visibility = if (checked) View.VISIBLE else View.GONE
+            updateFilesSummary()
+        }
+        button.setOnClickListener { picker.launch(null) }
+    }
+
+    private fun updateFilesSummary() {
+        var count = 0L
+        var bytes = 0L
+        knownCategoryInfos.forEach { if (it.checkbox.isChecked) { count += it.count; bytes += it.totalBytes } }
+        binding.textFilesSummarySend.text = if (bytes > 0) "${count}개 선택됨 (${formatBytes(bytes)})" else "${count}개 선택됨"
+    }
+
+    private fun missingFolderLabel(): String? {
+        if (binding.cbArchive.isChecked && archiveTreeUri == null) return "압축 파일"
+        if (binding.cbDownloads.isChecked && downloadsTreeUri == null) return "다운로드 폴더"
+        if (binding.cbInstaller.isChecked && installerTreeUri == null) return "설치 파일"
+        if (binding.cbOther.isChecked && otherTreeUri == null) return "기타"
+        return null
+    }
+
     private fun selectedCategories(): Set<Category> {
         val result = mutableSetOf<Category>()
         if (binding.cbContacts.isChecked) result += Category.CONTACTS
         if (binding.cbCallLog.isChecked) result += Category.CALL_LOG
         if (binding.cbCalendar.isChecked) result += Category.CALENDAR
         if (binding.cbSms.isChecked) result += Category.SMS
-        if (binding.cbApps.isChecked) result += Category.APP_LIST
-        if (binding.cbMedia.isChecked) {
-            result += Category.PHOTO
-            result += Category.VIDEO
-        }
+        if (binding.cbPhoto.isChecked) result += Category.PHOTO
+        if (binding.cbMusic.isChecked) result += Category.MUSIC
         if (binding.cbAudio.isChecked) result += Category.AUDIO
-        if (binding.cbSnsBackup.isChecked) result += Category.SNS_BACKUP
+        if (binding.cbVideo.isChecked) result += Category.VIDEO
+        if (selectedApps().isNotEmpty()) result += Category.APP_LIST
+        return result
+    }
+
+    private fun customUnits(): List<TransferUnit.Custom> {
+        val result = mutableListOf<TransferUnit.Custom>()
+        if (binding.cbArchive.isChecked) archiveTreeUri?.let { result += TransferUnit.Custom("CUSTOM_ARCHIVE", "압축 파일", it) }
+        if (binding.cbDownloads.isChecked) downloadsTreeUri?.let { result += TransferUnit.Custom("CUSTOM_DOWNLOADS", "다운로드 폴더", it) }
+        if (binding.cbInstaller.isChecked) installerTreeUri?.let { result += TransferUnit.Custom("CUSTOM_INSTALLER", "설치 파일", it) }
+        if (binding.cbOther.isChecked) otherTreeUri?.let { result += TransferUnit.Custom("CUSTOM_OTHER", "기타", it) }
         return result
     }
 
@@ -177,17 +325,20 @@ class SendActivity : AppCompatActivity() {
         }
     }
 
-    // Before actually connecting, size up each selected category (fastest-first order)
-    // and let the user see per-category / total estimated time before committing.
+    // Before actually connecting, size up each selected unit (fastest-first order)
+    // and let the user see per-unit / total estimated time before committing.
     private fun showEstimateThenStart() {
-        val ordered = Category.ORDERED.filter { it in selectedCategories() }
+        val categories = selectedCategories()
+        val customs = customUnits()
+        val appsSnapshot = selectedApps()
+        val orderedUnits: List<TransferUnit> = Category.ORDERED.filter { it in categories }.map { TransferUnit.Builtin(it) } + customs
         binding.textStatusSend.text = "예상 시간 계산 중..."
         Thread {
-            val estimates = ordered.map { TimeEstimate.estimate(applicationContext, it, snsBackupTreeUri) }
+            val estimates = orderedUnits.map { TimeEstimate.estimate(applicationContext, it, selectedSortOrder(), appsSnapshot.size) }
             val totalMs = estimates.sumOf { it.estimatedMs }
             val summary = buildString {
                 estimates.forEach { e ->
-                    append("${categoryLabel(e.category)}: ${e.count}개 (약 ${TimeEstimate.formatDuration(e.estimatedMs)})\n")
+                    append("${e.unit.label}: ${e.count}개 (약 ${TimeEstimate.formatDuration(e.estimatedMs)})\n")
                 }
                 append("\n총 예상 시간: 약 ${TimeEstimate.formatDuration(totalMs)}")
                 append("\n(실제 소요 시간은 기기·네트워크 속도에 따라 달라질 수 있습니다)")
@@ -197,7 +348,7 @@ class SendActivity : AppCompatActivity() {
                 AlertDialog.Builder(this)
                     .setTitle("전송 순서 및 예상 시간")
                     .setMessage(summary)
-                    .setPositiveButton("전송 시작") { _, _ -> startTransfer() }
+                    .setPositiveButton("전송 시작") { _, _ -> startTransfer(appsSnapshot, customs) }
                     .setNegativeButton("취소") { _, _ -> binding.btnConnectSend.isEnabled = true }
                     .setOnCancelListener { binding.btnConnectSend.isEnabled = true }
                     .show()
@@ -205,7 +356,7 @@ class SendActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun startTransfer() {
+    private fun startTransfer(selectedApps: List<AppEntry>, customUnits: List<TransferUnit.Custom>) {
         val connector = buildConnector()
         if (connector == null) {
             binding.textStatusSend.text = "연결 정보가 없습니다. 다시 시도하세요"
@@ -213,19 +364,19 @@ class SendActivity : AppCompatActivity() {
             return
         }
         val pin = binding.editPin.text.toString().trim()
-        val categories = selectedCategories()
 
         TransferClient(
             context = applicationContext,
             connector = connector,
             pin = pin,
-            categories = categories,
-            snsBackupTreeUri = snsBackupTreeUri,
+            categories = selectedCategories(),
+            selectedApps = selectedApps,
+            customUnits = customUnits,
             sortOrder = selectedSortOrder(),
             onProgress = { p ->
                 runOnUiThread {
                     binding.textCategoryIndexSend.text =
-                        "${p.categoryIndex}/${p.totalCategories} 처리 중: ${categoryLabel(p.category)}"
+                        "${p.categoryIndex}/${p.totalCategories} 처리 중: ${p.label}"
                     binding.progressCategorySend.progress = p.categoryPercent
                     binding.progressOverallSend.progress = p.overallPercent
                     binding.textStatusSend.text = p.message
@@ -247,4 +398,16 @@ class SendActivity : AppCompatActivity() {
             wifiDirect.unregister()
         }
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024 && unitIndex < units.size - 1) {
+        value /= 1024
+        unitIndex++
+    }
+    return if (unitIndex == 0) "${bytes}B" else String.format("%.1f%s", value, units[unitIndex])
 }

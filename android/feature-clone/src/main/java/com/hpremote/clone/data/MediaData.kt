@@ -16,13 +16,21 @@ object MediaExporter {
 
     private fun collectionFor(category: Category): Uri = when (category) {
         Category.PHOTO -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        Category.AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        Category.MUSIC, Category.AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         else -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    }
+
+    // MUSIC and AUDIO share the same MediaStore collection - IS_MUSIC is what tells apart
+    // actual music from everything else audio (call recordings, voice memos, ringtones).
+    private fun selectionFor(category: Category): String? = when (category) {
+        Category.MUSIC -> "${MediaStore.Audio.Media.IS_MUSIC}=1"
+        Category.AUDIO -> "${MediaStore.Audio.Media.IS_MUSIC}!=1"
+        else -> null
     }
 
     fun count(context: Context, category: Category): Int {
         context.contentResolver.query(
-            collectionFor(category), arrayOf(MediaStore.MediaColumns._ID), null, null, null
+            collectionFor(category), arrayOf(MediaStore.MediaColumns._ID), selectionFor(category), null, null
         )?.use { return it.count }
         return 0
     }
@@ -38,7 +46,7 @@ object MediaExporter {
         )
         val sql = "${MediaStore.MediaColumns.DATE_ADDED} ${if (sortOrder == SortOrder.NEWEST_FIRST) "DESC" else "ASC"}"
         val result = mutableListOf<MediaFile>()
-        context.contentResolver.query(collection, projection, null, null, sql)?.use { cursor ->
+        context.contentResolver.query(collection, projection, selectionFor(category), null, sql)?.use { cursor ->
             val idIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val nameIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val mimeIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
@@ -65,7 +73,7 @@ object MediaImporter {
 
     private fun collectionFor(category: Category): Uri = when (category) {
         Category.PHOTO -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        Category.AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        Category.MUSIC, Category.AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         else -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
     }
 
@@ -78,7 +86,7 @@ object MediaImporter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val subDir = when (category) {
                     Category.PHOTO -> Environment.DIRECTORY_PICTURES
-                    Category.AUDIO -> Environment.DIRECTORY_MUSIC
+                    Category.MUSIC, Category.AUDIO -> Environment.DIRECTORY_MUSIC
                     else -> Environment.DIRECTORY_MOVIES
                 }
                 put(MediaStore.MediaColumns.RELATIVE_PATH, "$subDir/hp_remote_clone")
