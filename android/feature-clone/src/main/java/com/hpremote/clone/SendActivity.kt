@@ -27,6 +27,7 @@ import com.hpremote.clone.transfer.TRANSFER_PORT
 import com.hpremote.clone.transfer.TimeEstimate
 import com.hpremote.clone.transfer.TransferClient
 import com.hpremote.clone.transfer.TransferUnit
+import com.hpremote.clone.transfer.UnitEstimate
 import com.hpremote.clone.transfer.relay.RelayConnector
 import com.hpremote.clone.wifidirect.WifiDirectHelper
 import com.hpremote.clone.wifidirect.WifiDirectPeer
@@ -229,14 +230,17 @@ class SendActivity : AppCompatActivity() {
         setUpFolderItem(binding.cbOther, binding.layoutOtherSend, binding.btnPickOtherFolder, otherFolderPicker)
 
         Thread {
-            val contactsCount = ContactsExporter.count(applicationContext)
-            val callLogCount = CallLogExporter.count(applicationContext)
-            val calendarCount = CalendarExporter.count(applicationContext)
-            val smsCount = SmsExporter.count(applicationContext)
-            val photos = MediaExporter.list(applicationContext, Category.PHOTO)
-            val music = MediaExporter.list(applicationContext, Category.MUSIC)
-            val audio = MediaExporter.list(applicationContext, Category.AUDIO)
-            val videos = MediaExporter.list(applicationContext, Category.VIDEO)
+            // Permission hasn't been requested yet at this point (that only happens when
+            // "전송 시작" is pressed), so a not-yet-granted permission must not crash this
+            // preview - just show 0 for that category until the user grants it later.
+            val contactsCount = safePreview(0) { ContactsExporter.count(applicationContext) }
+            val callLogCount = safePreview(0) { CallLogExporter.count(applicationContext) }
+            val calendarCount = safePreview(0) { CalendarExporter.count(applicationContext) }
+            val smsCount = safePreview(0) { SmsExporter.count(applicationContext) }
+            val photos = safePreview(emptyList()) { MediaExporter.list(applicationContext, Category.PHOTO) }
+            val music = safePreview(emptyList()) { MediaExporter.list(applicationContext, Category.MUSIC) }
+            val audio = safePreview(emptyList()) { MediaExporter.list(applicationContext, Category.AUDIO) }
+            val videos = safePreview(emptyList()) { MediaExporter.list(applicationContext, Category.VIDEO) }
             runOnUiThread {
                 val infos = listOf(
                     KnownCategoryInfo(Category.CONTACTS, binding.cbContacts, "연락처", contactsCount, 0L),
@@ -265,6 +269,16 @@ class SendActivity : AppCompatActivity() {
                 updateFilesSummary()
             }
         }.start()
+    }
+
+    // Both the pre-transfer preview and the estimate dialog query content providers before
+    // permissions are guaranteed to be granted - denied/not-yet-granted access must not crash.
+    private fun <T> safePreview(default: T, query: () -> T): T {
+        return try {
+            query()
+        } catch (e: SecurityException) {
+            default
+        }
     }
 
     private fun setUpFolderItem(checkbox: CheckBox, layout: View, button: View, picker: androidx.activity.result.ActivityResultLauncher<Uri?>) {
@@ -334,7 +348,9 @@ class SendActivity : AppCompatActivity() {
         val orderedUnits: List<TransferUnit> = Category.ORDERED.filter { it in categories }.map { TransferUnit.Builtin(it) } + customs
         binding.textStatusSend.text = "예상 시간 계산 중..."
         Thread {
-            val estimates = orderedUnits.map { TimeEstimate.estimate(applicationContext, it, selectedSortOrder(), appsSnapshot.size) }
+            val estimates = orderedUnits.map { unit ->
+                safePreview(UnitEstimate(unit, 0, 0L, 0L)) { TimeEstimate.estimate(applicationContext, unit, selectedSortOrder(), appsSnapshot.size) }
+            }
             val totalMs = estimates.sumOf { it.estimatedMs }
             val summary = buildString {
                 estimates.forEach { e ->
