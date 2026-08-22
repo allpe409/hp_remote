@@ -1,12 +1,14 @@
 package com.hpremote.clone.transfer
 
 import android.content.Context
+import android.net.Uri
 import com.hpremote.clone.data.AppListExporter
 import com.hpremote.clone.data.CalendarExporter
 import com.hpremote.clone.data.CallLogExporter
 import com.hpremote.clone.data.ContactsExporter
 import com.hpremote.clone.data.MediaExporter
 import com.hpremote.clone.data.SmsExporter
+import com.hpremote.clone.data.SnsBackupExporter
 
 /** One category's size (record count, and total bytes for media) and rough time estimate. */
 data class CategoryEstimate(
@@ -26,9 +28,18 @@ private const val MEDIA_BYTES_PER_MS = 8L * 1024 * 1024 / 1000 // 8 MB/s
 
 object TimeEstimate {
 
-    /** Queries just what's needed to size up [category] - counts for structured data, sizes for media. */
-    fun estimate(context: Context, category: Category): CategoryEstimate {
-        if (category.isMedia) {
+    /**
+     * Queries just what's needed to size up [category] - counts for structured data, sizes
+     * for file-based categories. [snsBackupTreeUri] is the user-picked folder for SNS_BACKUP;
+     * with none picked yet it sizes as empty (the UI tells the user to pick a folder first).
+     */
+    fun estimate(context: Context, category: Category, snsBackupTreeUri: Uri? = null): CategoryEstimate {
+        if (category == Category.SNS_BACKUP) {
+            val files = snsBackupTreeUri?.let { SnsBackupExporter.list(context, it) } ?: emptyList()
+            val totalBytes = files.sumOf { it.size }
+            return CategoryEstimate(category, files.size, totalBytes, totalBytes / MEDIA_BYTES_PER_MS)
+        }
+        if (category.isFileBased) {
             val files = MediaExporter.list(context, category)
             val totalBytes = files.sumOf { it.size }
             return CategoryEstimate(category, files.size, totalBytes, totalBytes / MEDIA_BYTES_PER_MS)

@@ -6,6 +6,7 @@ import com.hpremote.clone.data.CallLogImporter
 import com.hpremote.clone.data.ContactsImporter
 import com.hpremote.clone.data.MediaImporter
 import com.hpremote.clone.data.SmsImporter
+import com.hpremote.clone.data.SnsBackupImporter
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -70,6 +71,7 @@ class TransferServer(
             var currentCategory: Category? = null
             var currentCategoryIndex = 0
             var currentCategoryFilesReceived = 0
+            var receivedSnsBackup = false
             val appList = JSONArray()
 
             fun emit(category: Category, categoryPercent: Int, message: String) {
@@ -89,22 +91,27 @@ class TransferServer(
                 }
                 val categoryTotal = (categoryTotalUnits[category] ?: 0).coerceAtLeast(1)
 
-                if (category.isMedia) {
+                if (category.isFileBased) {
                     val meta = JSONObject(String(input.readFrame(), Charsets.UTF_8))
                     val name = meta.getString("name")
                     val mime = meta.getString("mime")
                     val size = meta.getLong("size")
-                    val uri = MediaImporter.begin(context, category, name, mime)
+                    val uri = if (category == Category.SNS_BACKUP) {
+                        SnsBackupImporter.begin(context, name, mime)
+                    } else {
+                        MediaImporter.begin(context, category, name, mime)
+                    }
                     if (uri != null) {
                         context.contentResolver.openOutputStream(uri)?.use { out ->
                             copyExactly(input, out, size)
                         }
-                        MediaImporter.finish(context, uri)
+                        if (category == Category.SNS_BACKUP) SnsBackupImporter.finish(context, uri) else MediaImporter.finish(context, uri)
                     } else {
                         skipExactly(input, size)
                     }
                     currentCategoryFilesReceived++
                     doneUnits++
+                    if (category == Category.SNS_BACKUP) receivedSnsBackup = true
                     emit(category, currentCategoryFilesReceived * 100 / categoryTotal, "받음: ${categoryLabel(category)} - $name")
                 } else {
                     val records = JSONArray(String(input.readFrame(), Charsets.UTF_8))
@@ -125,6 +132,9 @@ class TransferServer(
 
             if (appList.length() > 0) {
                 emit(currentCategory ?: Category.APP_LIST, 100, "설치된 앱 ${appList.length()}개는 새 폰에서 Play 스토어로 직접 재설치해 주세요.")
+            }
+            if (receivedSnsBackup) {
+                emit(currentCategory ?: Category.SNS_BACKUP, 100, "SNS 백업 파일은 다운로드 폴더의 hp_control_clone/sns_backup에 저장됐습니다. 카카오톡/라인 등에서 '대화 복원·가져오기'로 이 폴더의 파일을 선택해 복원해 주세요.")
             }
             onDone(true, "전송 완료")
         }

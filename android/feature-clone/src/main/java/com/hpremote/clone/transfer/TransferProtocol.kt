@@ -35,16 +35,19 @@ enum class Category(val tag: String) {
     CALENDAR("CALENDAR"),
     SMS("SMS"),
     PHOTO("PHOTO"),
-    VIDEO("VIDEO");
+    VIDEO("VIDEO"),
+    SNS_BACKUP("SNS_BACKUP");
 
-    val isMedia: Boolean get() = this == PHOTO || this == VIDEO
+    // True for categories carried as raw files (metadata frame + exact-size byte copy)
+    // rather than a single JSON array of structured records.
+    val isFileBased: Boolean get() = this == PHOTO || this == VIDEO || this == SNS_BACKUP
 
     companion object {
         fun fromTag(tag: String): Category? = values().firstOrNull { it.tag == tag }
 
-        // Fastest-first: cheap structured records before large binary media,
-        // and within structured data, roughly by per-record insert cost.
-        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, VIDEO)
+        // Fastest-first: cheap structured records before large binary media. SNS_BACKUP
+        // goes last - it's an arbitrary user-picked folder, so it's the least predictable.
+        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, VIDEO, SNS_BACKUP)
     }
 }
 

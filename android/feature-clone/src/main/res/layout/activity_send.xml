@@ -206,6 +206,44 @@
             android:checked="true"
             android:text="설치된 앱 목록" />
 
+        <CheckBox
+            android:id="@+id/cb_sns_backup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="false"
+            android:text="SNS 백업 파일 (카카오톡 · 라인 등)" />
+
+        <LinearLayout
+            android:id="@+id/layout_sns_backup_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="먼저 카카오톡·라인 등 앱의 '대화 백업/내보내기' 기능으로 백업 파일을 만든 뒤, 그 파일이 저장된 폴더를 선택하세요"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_pick_sns_folder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="폴더 선택" />
+
+            <TextView
+                android:id="@+id/text_sns_folder_send"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="선택된 폴더 없음"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
         <Button
             android:id="@+id/btn_connect_send"
             android:layout_width="match_parent"

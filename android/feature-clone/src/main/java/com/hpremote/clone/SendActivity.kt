@@ -1,5 +1,7 @@
 package com.hpremote.clone
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
@@ -27,9 +29,21 @@ class SendActivity : AppCompatActivity() {
     private val wifiDirect by lazy { WifiDirectHelper(this) }
     private var discoveredPeers: List<WifiDirectPeer> = emptyList()
     private var wifiDirectHost: String? = null
+    private var snsBackupTreeUri: Uri? = null
 
     private val sendPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { showEstimateThenStart() }
+
+    private val snsFolderPicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+                snsBackupTreeUri = uri
+                binding.textSnsFolderSend.text = uri.lastPathSegment ?: uri.toString()
+            }
+        }
 
     private val wifiDirectPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -76,6 +90,13 @@ class SendActivity : AppCompatActivity() {
             wifiDirectPermissionLauncher.launch(PermissionsHelper.wifiDirectPermissions())
         }
 
+        binding.cbSnsBackup.setOnCheckedChangeListener { _, checked ->
+            binding.layoutSnsBackupSend.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        binding.btnPickSnsFolder.setOnClickListener {
+            snsFolderPicker.launch(null)
+        }
+
         binding.radioMethodSend.setOnCheckedChangeListener { _, checkedId ->
             selectedMethod = when (checkedId) {
                 binding.radioWifiDirectSend.id -> ConnectionMethod.WIFI_DIRECT
@@ -114,6 +135,10 @@ class SendActivity : AppCompatActivity() {
                 binding.textStatusSend.text = "보낼 데이터를 하나 이상 선택하세요"
                 return@setOnClickListener
             }
+            if (binding.cbSnsBackup.isChecked && snsBackupTreeUri == null) {
+                binding.textStatusSend.text = "SNS 백업 파일이 저장된 폴더를 먼저 선택하세요"
+                return@setOnClickListener
+            }
             binding.btnConnectSend.isEnabled = false
             binding.textStatusSend.text = ""
             binding.textCategoryIndexSend.text = ""
@@ -134,6 +159,7 @@ class SendActivity : AppCompatActivity() {
             result += Category.PHOTO
             result += Category.VIDEO
         }
+        if (binding.cbSnsBackup.isChecked) result += Category.SNS_BACKUP
         return result
     }
 
@@ -152,7 +178,7 @@ class SendActivity : AppCompatActivity() {
         val ordered = Category.ORDERED.filter { it in selectedCategories() }
         binding.textStatusSend.text = "예상 시간 계산 중..."
         Thread {
-            val estimates = ordered.map { TimeEstimate.estimate(applicationContext, it) }
+            val estimates = ordered.map { TimeEstimate.estimate(applicationContext, it, snsBackupTreeUri) }
             val totalMs = estimates.sumOf { it.estimatedMs }
             val summary = buildString {
                 estimates.forEach { e ->
@@ -189,6 +215,7 @@ class SendActivity : AppCompatActivity() {
             connector = connector,
             pin = pin,
             categories = categories,
+            snsBackupTreeUri = snsBackupTreeUri,
             onProgress = { p ->
                 runOnUiThread {
                     binding.textCategoryIndexSend.text =

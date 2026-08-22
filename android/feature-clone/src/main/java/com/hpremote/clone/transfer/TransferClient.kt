@@ -1,6 +1,7 @@
 package com.hpremote.clone.transfer
 
 import android.content.Context
+import android.net.Uri
 import com.hpremote.clone.data.AppListExporter
 import com.hpremote.clone.data.CalendarExporter
 import com.hpremote.clone.data.CallLogExporter
@@ -8,6 +9,7 @@ import com.hpremote.clone.data.ContactsExporter
 import com.hpremote.clone.data.MediaExporter
 import com.hpremote.clone.data.MediaFile
 import com.hpremote.clone.data.SmsExporter
+import com.hpremote.clone.data.SnsBackupExporter
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -16,6 +18,7 @@ class TransferClient(
     private val connector: DuplexConnector,
     private val pin: String,
     private val categories: Set<Category>,
+    private val snsBackupTreeUri: Uri?,
     private val onProgress: (TransferProgress) -> Unit,
     private val onDone: (success: Boolean, message: String) -> Unit
 ) {
@@ -63,7 +66,7 @@ class TransferClient(
             }
 
             // A quick count/size pass (no JSON build, no file bytes read) just to size the manifest.
-            val estimates = ordered.associateWith { safeExport({ TimeEstimate.estimate(context, it) }, CategoryEstimate(it, 0, 0L, 0L)) }
+            val estimates = ordered.associateWith { safeExport({ TimeEstimate.estimate(context, it, snsBackupTreeUri) }, CategoryEstimate(it, 0, 0L, 0L)) }
 
             val manifest = JSONObject()
             ordered.forEach { manifest.put(it.tag, estimates.getValue(it).count) }
@@ -81,8 +84,14 @@ class TransferClient(
                     onProgress(TransferProgress(categoryIndex, ordered.size, category, categoryPercent.coerceIn(0, 100), overall, message))
                 }
 
-                if (category.isMedia) {
-                    val files = safeExport({ MediaExporter.list(context, category) }, emptyList<MediaFile>())
+                if (category.isFileBased) {
+                    val files = safeExport({
+                        if (category == Category.SNS_BACKUP) {
+                            snsBackupTreeUri?.let { SnsBackupExporter.list(context, it) } ?: emptyList()
+                        } else {
+                            MediaExporter.list(context, category)
+                        }
+                    }, emptyList<MediaFile>())
                     val total = files.size.coerceAtLeast(1)
                     files.forEachIndexed { fi, file ->
                         output.writeUTF(category.tag)

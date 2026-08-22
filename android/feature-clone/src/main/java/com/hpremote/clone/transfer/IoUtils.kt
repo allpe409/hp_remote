@@ -38,4 +38,5 @@ fun categoryLabel(category: Category): String = when (category) {
     Category.APP_LIST -> "설치된 앱 목록"
     Category.PHOTO -> "사진"
     Category.VIDEO -> "동영상"
+    Category.SNS_BACKUP -> "SNS 백업 파일 (카카오톡·라인 등)"
 }
