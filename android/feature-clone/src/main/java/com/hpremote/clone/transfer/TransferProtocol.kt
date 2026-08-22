@@ -28,6 +28,14 @@ enum class ConnectionMethod {
     RELAY
 }
 
+// Order to send files within a file-based category. Large media transfers can get
+// interrupted partway through, so newest-first (the default) makes sure the most
+// recent - usually most wanted - photos/videos/audio land first.
+enum class SortOrder {
+    NEWEST_FIRST,
+    OLDEST_FIRST
+}
+
 enum class Category(val tag: String) {
     APP_LIST("APP_LIST"),
     CONTACTS("CONTACTS"),
@@ -35,19 +43,20 @@ enum class Category(val tag: String) {
     CALENDAR("CALENDAR"),
     SMS("SMS"),
     PHOTO("PHOTO"),
+    AUDIO("AUDIO"),
     VIDEO("VIDEO"),
     SNS_BACKUP("SNS_BACKUP");
 
     // True for categories carried as raw files (metadata frame + exact-size byte copy)
     // rather than a single JSON array of structured records.
-    val isFileBased: Boolean get() = this == PHOTO || this == VIDEO || this == SNS_BACKUP
+    val isFileBased: Boolean get() = this == PHOTO || this == AUDIO || this == VIDEO || this == SNS_BACKUP
 
     companion object {
         fun fromTag(tag: String): Category? = values().firstOrNull { it.tag == tag }
 
         // Fastest-first: cheap structured records before large binary media. SNS_BACKUP
         // goes last - it's an arbitrary user-picked folder, so it's the least predictable.
-        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, VIDEO, SNS_BACKUP)
+        val ORDERED: List<Category> = listOf(APP_LIST, CONTACTS, CALL_LOG, CALENDAR, SMS, PHOTO, AUDIO, VIDEO, SNS_BACKUP)
     }
 }
 

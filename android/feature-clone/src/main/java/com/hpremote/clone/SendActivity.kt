@@ -14,6 +14,7 @@ import com.hpremote.clone.transfer.ConnectionMethod
 import com.hpremote.clone.transfer.DEFAULT_RELAY_URL
 import com.hpremote.clone.transfer.DuplexConnector
 import com.hpremote.clone.transfer.LocalConnector
+import com.hpremote.clone.transfer.SortOrder
 import com.hpremote.clone.transfer.TRANSFER_PORT
 import com.hpremote.clone.transfer.TimeEstimate
 import com.hpremote.clone.transfer.TransferClient
@@ -159,9 +160,13 @@ class SendActivity : AppCompatActivity() {
             result += Category.PHOTO
             result += Category.VIDEO
         }
+        if (binding.cbAudio.isChecked) result += Category.AUDIO
         if (binding.cbSnsBackup.isChecked) result += Category.SNS_BACKUP
         return result
     }
+
+    private fun selectedSortOrder(): SortOrder =
+        if (binding.radioSortOldestSend.isChecked) SortOrder.OLDEST_FIRST else SortOrder.NEWEST_FIRST
 
     private fun buildConnector(): DuplexConnector? {
         val pin = binding.editPin.text.toString().trim()
@@ -216,6 +221,7 @@ class SendActivity : AppCompatActivity() {
             pin = pin,
             categories = categories,
             snsBackupTreeUri = snsBackupTreeUri,
+            sortOrder = selectedSortOrder(),
             onProgress = { p ->
                 runOnUiThread {
                     binding.textCategoryIndexSend.text =

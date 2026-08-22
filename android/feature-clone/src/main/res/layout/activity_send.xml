@@ -200,6 +200,13 @@
             android:text="사진 / 동영상" />
 
         <CheckBox
+            android:id="@+id/cb_audio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="음성 파일" />
+
+        <CheckBox
             android:id="@+id/cb_apps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -243,6 +250,42 @@
                 android:textSize="12sp" />
 
         </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="사진 · 동영상 · 음성 · SNS 백업 정렬"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="용량이 큰 항목이라 도중에 끊겨도 중요한 파일이 먼저 넘어가도록 최신순이 기본입니다"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/radio_sort_order_send"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/radio_sort_newest_send"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="최신순 (기본)" />
+
+            <RadioButton
+                android:id="@+id/radio_sort_oldest_send"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="20dp"
+                android:text="오래된순" />
+
+        </RadioGroup>
 
         <Button
             android:id="@+id/btn_connect_send"

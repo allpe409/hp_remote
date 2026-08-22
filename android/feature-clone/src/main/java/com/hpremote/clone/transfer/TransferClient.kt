@@ -19,6 +19,7 @@ class TransferClient(
     private val pin: String,
     private val categories: Set<Category>,
     private val snsBackupTreeUri: Uri?,
+    private val sortOrder: SortOrder,
     private val onProgress: (TransferProgress) -> Unit,
     private val onDone: (success: Boolean, message: String) -> Unit
 ) {
@@ -87,9 +88,9 @@ class TransferClient(
                 if (category.isFileBased) {
                     val files = safeExport({
                         if (category == Category.SNS_BACKUP) {
-                            snsBackupTreeUri?.let { SnsBackupExporter.list(context, it) } ?: emptyList()
+                            snsBackupTreeUri?.let { SnsBackupExporter.list(context, it, sortOrder) } ?: emptyList()
                         } else {
-                            MediaExporter.list(context, category)
+                            MediaExporter.list(context, category, sortOrder)
                         }
                     }, emptyList<MediaFile>())
                     val total = files.size.coerceAtLeast(1)

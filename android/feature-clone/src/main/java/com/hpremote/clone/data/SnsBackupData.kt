@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import com.hpremote.clone.transfer.SortOrder
 
 private const val SNS_BACKUP_RELATIVE_DIR = "hp_control_clone/sns_backup"
 
@@ -19,11 +20,16 @@ private const val SNS_BACKUP_RELATIVE_DIR = "hp_control_clone/sns_backup"
  */
 object SnsBackupExporter {
 
-    fun list(context: Context, treeUri: Uri): List<MediaFile> {
+    fun list(context: Context, treeUri: Uri, sortOrder: SortOrder = SortOrder.NEWEST_FIRST): List<MediaFile> {
         val root = DocumentFile.fromTreeUri(context, treeUri) ?: return emptyList()
         val result = mutableListOf<MediaFile>()
         collect(root, "", result)
-        return result
+        // SAF has no query-level ordering, unlike MediaStore - sort by lastModified() here.
+        return if (sortOrder == SortOrder.NEWEST_FIRST) {
+            result.sortedByDescending { it.dateMillis }
+        } else {
+            result.sortedBy { it.dateMillis }
+        }
     }
 
     private fun collect(dir: DocumentFile, prefix: String, out: MutableList<MediaFile>) {
@@ -37,7 +43,8 @@ object SnsBackupExporter {
                         uri = entry.uri,
                         displayName = "$prefix$name",
                         mimeType = entry.type ?: "application/octet-stream",
-                        size = entry.length()
+                        size = entry.length(),
+                        dateMillis = entry.lastModified()
                     )
                 )
             }
